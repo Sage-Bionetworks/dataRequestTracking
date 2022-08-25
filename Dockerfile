@@ -2,14 +2,17 @@
 #       docker build --no-cache -t datarequesttracking .
 FROM python:latest
 
-RUN pip3 install synapseclient[pandas,pysftp] 
+RUN pip3 install \
+	datetime \
+	numpy \
+	pytz \
+	requests \
+ 	synapseclient \
+ 	pandas \
+	pysftp
 
-COPY requirements.txt requirements.txt
-RUN pip3 install -r requirements.txt
-
-RUN https://github.com/Sage-Bionetworks/dataRequestTracking.git
+RUN git clone https://github.com/Sage-Bionetworks/dataRequestTracking.git
 
 WORKDIR dataRequestTracking
 
 CMD ["/bin/bash"]
-
