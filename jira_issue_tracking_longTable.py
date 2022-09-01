@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 '''
-Name: jira_issue_tracking.py
+Name: jira_issue_tracking_longTable.py
 Description: script to create jira issue for newly submitted data request 
              and generate issue tracking report
 Contributors: Hannah Calkins, Dan Lu
@@ -180,7 +180,7 @@ def pull_issues(auth):
             log['key'] = result['key']
             log['status'] = log['fromString'] + ' - ' + log['toString']
             log.drop(columns = ['fromString', 'toString'], inplace = True)
-            log['number'] = log.index + 1
+            log['status_order'] = log.index + 1
             log.rename(columns = {'created' :'createdOn'}, inplace = True)
             # convert datetime columns to str
             log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
@@ -188,23 +188,22 @@ def pull_issues(auth):
             cols = [type + '_' + str(num) for type in ['status', 'createdOn', 'time_in_status'] for num in log.index + 1]
             cols.sort(key=lambda x: x.split('_')[-1])
             cols = ['requestId', 'key'] + cols
-            log = pd.pivot(log, index=['requestId', 'key'], columns = 'number', values=['status','createdOn', 'time_in_status']).reset_index()
-            # restore column orders
-            log.columns = log.columns.to_flat_index()
-            log.rename(columns=lambda x: x[0] + '_' + str(x[1]) if x[0] in ['status', 'createdOn', 'time_in_status'] else x[0], inplace = True)
-            log = log[cols]
          else:
             #if anythong other than status changed
-            log = pd.DataFrame({**{'key':result['key'], 'requestId' : result['fields']['customfield_12178'], 'status_1': result['fields']['status']['name'], 'createdOn_1' : result['fields']['created']}},index=[0]).reset_index(drop=True)
-            log['createdOn_1'] = log['createdOn_1'].apply(reformat_datetime)
-            log['time_in_status_1'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn_1']
-            log[['createdOn_1', 'time_in_status_1']] = log[['createdOn_1', 'time_in_status_1']].astype(str)
+            log = pd.DataFrame({**{'key':result['key'], 'requestId' : result['fields']['customfield_12178'], 'status': result['fields']['status']['name'], 'createdOn' : result['fields']['created']}},index=[0]).reset_index(drop=True)
+            log['createdOn'] = log['createdOn'].apply(reformat_datetime)
+            log['time_in_status'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn']
+            log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
+            log['status_order'] = 1
+            
+         logs = pd.concat([logs, log],axis = 0, ignore_index=True)
       else: 
-         log = pd.DataFrame({**{'key':result['key'], 'requestId' : result['fields']['customfield_12178'], 'status_1': result['fields']['status']['name'], 'createdOn_1' : result['fields']['created']}},index=[0]).reset_index(drop=True)
-         log['createdOn_1'] = log['createdOn_1'].apply(reformat_datetime)
-         log['time_in_status_1'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn_1']
-         log[['createdOn_1', 'time_in_status_1']] = log[['createdOn_1', 'time_in_status_1']].astype(str)
-      logs = pd.concat([logs, log],axis = 0, ignore_index=True)
+         log = pd.DataFrame({**{'key':result['key'], 'requestId' : result['fields']['customfield_12178'], 'status': result['fields']['status']['name'], 'createdOn' : result['fields']['created']}},index=[0]).reset_index(drop=True)
+         log['createdOn'] = log['createdOn'].apply(reformat_datetime)
+         log['time_in_status'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn']
+         log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
+         log['status_order'] = 1
+         logs = pd.concat([logs, log],axis = 0, ignore_index=True)
    return (logs.reset_index(drop = True))
 
 def main():
@@ -235,9 +234,9 @@ def main():
          description = f"{str(request_tracking.loc[request_tracking['requestId'] == requestId, 'firstName'].values[0])} {request_tracking.loc[request_tracking['requestId'] == requestId, 'lastName'].values[0]} from {request_tracking.loc[request_tracking['requestId'] == requestId, 'teamName'].values[0]} team requested access to {request_tracking.loc[request_tracking['requestId'] == requestId, 'SynapseID'].values[0]}. (Controlled_ID: {request_tracking.loc[request_tracking['requestId'] == requestId, 'controlled_AR'].values[0]})"
          create_issue(auth, summary, duedate, requestId, description)
    # update changeLogs table
-   results = syn.tableQuery("select * from syn33344572")
+   results = syn.tableQuery("select * from syn35358355")
    delete_out = syn.delete(results)
-   table_out = syn.store(Table("syn33344572", logs))
+   table_out = syn.store(Table("syn35358355", logs))
 
 if __name__ == "__main__":
     main()

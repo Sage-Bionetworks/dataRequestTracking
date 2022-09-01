@@ -1,5 +1,5 @@
 '''
-Name: data_request_tracking.py
+Name: data_request_tracking_longTable.py
 Description: a script to generate data_request_tracking table, data request change logs table, 
              data structure tree and team member table for 1kD project
 Contributors: Dan Lu
@@ -9,6 +9,7 @@ import json
 import logging
 import multiprocessing
 import os
+import pdb
 import re
 import shutil
 import subprocess
@@ -16,8 +17,6 @@ import tempfile
 from datetime import datetime
 from functools import partial
 from itertools import chain
-from pickle import TRUE
-from xml.etree.ElementTree import TreeBuilder
 
 import numpy as np
 import pandas as pd
@@ -102,7 +101,7 @@ def get_userProfile(teamID: str, return_profile: bool = True) -> list:
                 for x in members
             ]
         )
-        user_profile.drop(columns="isIndividual", inplace= True)
+        user_profile.drop(columns="isIndividual", inplace = True)
         user_profile["team"] = syn.getTeam(teamID)["name"]
         return user_profile.rename(columns={"ownerId": "submitterID"})
     else:
@@ -436,12 +435,9 @@ def data_request_processing_logs(accessRequirementId: str) -> pd.DataFrame:
         grouped_submissions = group_submissions(ar, requestIds, get_current=False)
         for key, value in grouped_submissions.items():
             log = pd.DataFrame()
-            log["requestId"] = [key]
             for idx in range(len(value)):
                 event = pd.json_normalize(value[idx], max_level=1)
-                rejected_idx = 0
                 if event["state"].values[0] == "REJECTED":
-                    rejected_idx = +1
                     # extract reject reason for rejected event
                     event = pd.concat(
                         [
@@ -471,24 +467,8 @@ def data_request_processing_logs(accessRequirementId: str) -> pd.DataFrame:
                             "modifiedOn",
                         ]
                     ]
-                    # convert time to pst and calculate time_in_status
-                    event[["submittedOn", "modifiedOn"]] = event[
-                        ["submittedOn", "modifiedOn"]
-                    ].apply(from_iso_to_datetime)
-                    event["time_in_status"] = event["modifiedOn"] - event["submittedOn"]
-                    # rename column names to indicate the event order
-                    event.rename(
-                        columns={
-                            "state": f"state_{idx+1}",
-                            "submittedOn": f"submittedOn_{idx+1}",
-                            "modifiedOn": f"modifiedOn_{idx+1}",
-                            "intendedDataUseStatement": f"IDU_{idx+1}",
-                            "rejectedReason": f"rejectedReason_{rejected_idx}",
-                            "time_in_status": f"time_in_status__{idx+1}",
-                        },
-                        inplace=True,
-                    )
                 else:
+                    event = pd.json_normalize(value[idx], max_level=1)
                     event = pd.concat(
                         [
                             event.filter(regex="^researchProjectSnapshot", axis=1),
@@ -514,43 +494,34 @@ def data_request_processing_logs(accessRequirementId: str) -> pd.DataFrame:
                             "modifiedOn",
                         ]
                     ]
-                    # convert time to pst and calculate time_in_status
-                    event[["submittedOn", "modifiedOn"]] = event[
+                # convert time to pst and calculate time_in_status
+                event[["submittedOn", "modifiedOn"]] = event[
                         ["submittedOn", "modifiedOn"]
                     ].apply(from_iso_to_datetime)
-                    if value[idx]["state"] == "SUBMITTED":
-                        # calculate time_in_status for SUBMITTED request (no modifiedOn date)
-                        event["time_in_status"] = (
-                            datetime.now(pytz.timezone("US/Pacific")).replace(
-                                microsecond=0, tzinfo=None
-                            )
-                            - event["submittedOn"]
+                if value[idx]["state"] == "SUBMITTED":
+                    # calculate time_in_status for SUBMITTED request (no modifiedOn date)
+                    event["time_in_status"] = (
+                        datetime.now(pytz.timezone("US/Pacific")).replace(
+                            microsecond=0, tzinfo=None
                         )
-                        event[["submittedOn", "modifiedOn", "time_in_status"]] = event[
-                            ["submittedOn", "modifiedOn", "time_in_status"]
-                        ].astype(str)
-                        event["modifiedOn"] = ""
-                    else:
-                        event["time_in_status"] = (
-                            event["modifiedOn"] - event["submittedOn"]
-                        )
-                        event[["submittedOn", "modifiedOn", "time_in_status"]] = event[
-                            ["submittedOn", "modifiedOn", "time_in_status"]
-                        ].astype(str)
-                    # rename column names to indicate the event order
-                    event.rename(
-                        columns={
-                            "state": f"state_{idx+1}",
-                            "submittedOn": f"submittedOn_{idx+1}",
-                            "modifiedOn": f"modifiedOn_{idx+1}",
-                            "intendedDataUseStatement": f"IDU_{idx+1}",
-                            "time_in_status": f"time_in_status__{idx+1}",
-                        },
-                        inplace=True,
+                        - event["submittedOn"]
                     )
-                log = pd.concat([log, event], axis=1)
-
+                    event[["submittedOn", "modifiedOn", "time_in_status"]] = event[
+                        ["submittedOn", "modifiedOn", "time_in_status"]
+                    ].astype(str)
+                    event["modifiedOn"] = ""
+                else:
+                    event["time_in_status"] = (
+                        event["modifiedOn"] - event["submittedOn"]
+                    )
+                    event[["submittedOn", "modifiedOn", "time_in_status"]] = event[
+                        ["submittedOn", "modifiedOn", "time_in_status"]
+                    ].astype(str)
+                event['state_order'] = idx + 1
+                log = pd.concat([log, event], axis=0, ignore_index=True)
+            log["requestId"] = key
             logs = pd.concat([logs, log], axis=0, ignore_index=True)
+        logs.rename(columns = {"intendedDataUseStatement":"IDU"}, inplace= True)
         return logs
 
 
@@ -564,7 +535,7 @@ def update_table(tableName: str, df: pd.DataFrame):
     syn = Synapse().client()
     tables = {
         "Data Request Tracking Table": "syn33240664",
-        "Data Request changeLogs Table": "syn33239341",
+        "Data Request changeLogs Table": "syn35382746",
         '1kD Team Members': "syn35048407",
     }
     results = syn.tableQuery(f"select * from {tables[tableName]}")
@@ -585,8 +556,9 @@ def update_folder_tree(out_dir):
         )
     )
     os.remove("data_folder_structure.txt")
-    
+
 def main():
+    Synapse().client()
     ## crawl through folder structure to get accessRequirementId
     folderIDs = get_data_folderIDs()
     #create a temporary directory under the current working directory
@@ -605,7 +577,7 @@ def main():
     logs = pd.DataFrame()
     for controlled_AR in controlled_ARs:
         log = data_request_processing_logs(controlled_AR)
-        logs = pd.concat([logs, log])
+        logs = pd.concat([logs, log], axis=0, ignore_index=True)
     ## pull data request info
     controlled_requests = pd.DataFrame()
     for controlled_AR in controlled_ARs:
@@ -673,9 +645,9 @@ def main():
     # trim df_merged to only include requests being processed or be in process
     df_merged = df_merged[(df_merged[["clickWrap_AR","controlled_AR", "requestId"]].notnull().all(1)) | ((~df_merged["clickWrap_AR"].isnull()) & (df_merged["controlled_AR"].isnull()))].reset_index(drop=True)
     #update tables
-    update_table("Data Request Tracking Table", df_merged)
+    #update_table("Data Request Tracking Table", df_merged)
     update_table("Data Request changeLogs Table", logs)
-    update_table("1kD Team Members", members)
+    #update_table("1kD Team Members", members)
 
 
 if __name__ == "__main__":
