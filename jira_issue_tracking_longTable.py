@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 '''
-Name: jira_issue_tracking.py
+Name: jira_issue_tracking_longTable.py
 Description: script to create jira issue for newly submitted data request 
              and generate issue tracking report
 Contributors: Hannah Calkins, Dan Lu
