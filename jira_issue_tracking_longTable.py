@@ -208,7 +208,11 @@ def pull_issues(auth):
 
 def main():
    syn = Synapse().client()
-   auth = HTTPBasicAuth(os.environ.get("JIRA_EMAIL"), os.environ.get("JIRA_API_TOKEN"))
+   if os.getenv("SCHEDULED_JOB_SECRETS") is not None:
+      secrets = json.loads(os.getenv("SCHEDULED_JOB_SECRETS"))
+      auth = HTTPBasicAuth(secrets["JIRA_EMAIL"], secrets["JIRA_API_TOKEN"])
+   else:
+      auth = HTTPBasicAuth(os.environ.get("JIRA_EMAIL"), os.environ.get("JIRA_API_TOKEN"))
    # pull data request info from data request tracking table
    query = "SELECT * from syn33240664"
    request_tracking = syn.tableQuery(query).asDataFrame().reset_index(drop = True)
