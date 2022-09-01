@@ -9,7 +9,6 @@ import json
 import logging
 import multiprocessing
 import os
-import pdb
 import re
 import shutil
 import subprocess
@@ -17,6 +16,8 @@ import tempfile
 from datetime import datetime
 from functools import partial
 from itertools import chain
+from pickle import TRUE
+from xml.etree.ElementTree import TreeBuilder
 
 import numpy as np
 import pandas as pd
@@ -53,7 +54,7 @@ class Synapse:
                     secrets = json.loads(os.getenv("SCHEDULED_JOB_SECRETS"))
                     cls._synapse_client.login(silent=True, authToken=secrets["SYNAPSE_AUTH_TOKEN"])
                 else:
-                    cls._synapse_client.login(silent=True)
+                    cls._synapse_client.login(authToken = os.getenv("SYNAPSE_AUTH_TOKEN"),silent=True)
             except SynapseAuthenticationError:
                 cls._synapse_client.login(syn_user, syn_pass, silent=True)
 
@@ -101,7 +102,7 @@ def get_userProfile(teamID: str, return_profile: bool = True) -> list:
                 for x in members
             ]
         )
-        user_profile = user_profile.drop(columns="isIndividual", axis=1)
+        user_profile.drop(columns="isIndividual", inplace= True)
         user_profile["team"] = syn.getTeam(teamID)["name"]
         return user_profile.rename(columns={"ownerId": "submitterID"})
     else:
@@ -228,31 +229,17 @@ def get_AR_folders(out_dir, folderID) -> pd.DataFrame:
     temp_dir = tempfile.mkdtemp(dir=out_dir)
     dirname_mappings = {}
     for dirpath, dirname, filename in walkedPath:
-        if "/" in dirpath[0]:
-            # get the last substring
-            folder = pd.DataFrame([dirpath], columns=["folder_name", "folder_ID"])
-            # append ARs
-            clickWrap_AR, controlled_AR = get_accessRequirementIds(folder.folder_ID[0])
-            if clickWrap_AR:
-                folder["clickWrap_AR"] = str(clickWrap_AR[0])
-            if controlled_AR:
-                folder["controlled_AR"] = str(controlled_AR[0])
-            get_folder_tree(
+        folder = pd.DataFrame([dirpath], columns=["folder_name", "folder_ID"])
+        # append ARs
+        clickWrap_AR, controlled_AR = get_accessRequirementIds(folder.folder_ID[0])
+        if clickWrap_AR:
+            folder["clickWrap_AR"] = str(clickWrap_AR[0])
+        if controlled_AR:
+            folder["controlled_AR"] = str(controlled_AR[0])
+        get_folder_tree(
                 temp_dir, dirpath, clickWrap_AR, controlled_AR, dirname_mappings
             )
-            folders = pd.concat([folders, folder], ignore_index=True)
-        else:
-            folder = pd.DataFrame([dirpath], columns=["folder_name", "folder_ID"])
-            # append ARs
-            clickWrap_AR, controlled_AR = get_accessRequirementIds(folder.folder_ID[0])
-            if clickWrap_AR:
-                folder["clickWrap_AR"] = str(clickWrap_AR[0])
-            if controlled_AR:
-                folder["controlled_AR"] = str(controlled_AR[0])
-            get_folder_tree(
-                temp_dir, dirpath, clickWrap_AR, controlled_AR, dirname_mappings
-            )
-            folders = pd.concat([folders, folder], ignore_index=True)
+        folders = pd.concat([folders, folder], ignore_index=True)
     os.rename(temp_dir, os.path.join(out_dir, folderID))
     return folders
 
@@ -267,15 +254,15 @@ def get_accessRequirementIds(folderID: str) -> list:
         list: clickWrap_AR and controlled_AR
     """
     syn = Synapse().client()
+    # TODO: explore why this API called twice for each entity
     all_ar = syn.restGET(uri=f"/entity/{folderID}/accessRequirement")["results"]
     if all_ar:
         clickWrap_AR = [ar["id"] for ar in all_ar if not "isIDURequired" in ar.keys()]
         controlled_AR = [ar["id"] for ar in all_ar if "isIDURequired" in ar.keys()]
-        return clickWrap_AR, controlled_AR
     else:
         clickWrap_AR = ""
         controlled_AR = ""
-        return clickWrap_AR, controlled_AR
+    return clickWrap_AR, controlled_AR
 
 
 def from_iso_to_datetime(date_time: str):
@@ -334,7 +321,6 @@ def get_controlled_data_request(accessRequirementId: str):
         df = pd.json_normalize(grouped_submissions, max_level=1)
         # drop modified on in researchProjectSnapshot
         df.drop(columns=["researchProjectSnapshot.modifiedOn"], inplace=True)
-        pdb.set_trace()
         df = pd.concat(
             [
                 df.filter(regex="^researchProjectSnapshot", axis=1),
@@ -344,7 +330,6 @@ def get_controlled_data_request(accessRequirementId: str):
         )
         # trim and rename dataframe
         df = df.rename(columns=lambda x: re.sub("^researchProjectSnapshot.", "", x))
-        pdb.set_trace()
         df = df[
             [
                 "subjectId",
@@ -453,11 +438,11 @@ def data_request_processing_logs(accessRequirementId: str) -> pd.DataFrame:
             log = pd.DataFrame()
             log["requestId"] = [key]
             for idx in range(len(value)):
+                event = pd.json_normalize(value[idx], max_level=1)
                 rejected_idx = 0
-                if value[idx]["state"] == "REJECTED":
+                if event["state"].values[0] == "REJECTED":
                     rejected_idx = +1
                     # extract reject reason for rejected event
-                    event = pd.json_normalize(value[idx], max_level=1)
                     event = pd.concat(
                         [
                             event.filter(regex="^researchProjectSnapshot", axis=1),
@@ -503,9 +488,7 @@ def data_request_processing_logs(accessRequirementId: str) -> pd.DataFrame:
                         },
                         inplace=True,
                     )
-                    log = pd.concat([log, event], axis=1)
                 else:
-                    event = pd.json_normalize(value[idx], max_level=1)
                     event = pd.concat(
                         [
                             event.filter(regex="^researchProjectSnapshot", axis=1),
@@ -565,7 +548,7 @@ def data_request_processing_logs(accessRequirementId: str) -> pd.DataFrame:
                         },
                         inplace=True,
                     )
-                    log = pd.concat([log, event], axis=1)
+                log = pd.concat([log, event], axis=1)
 
             logs = pd.concat([logs, log], axis=0, ignore_index=True)
         return logs
@@ -601,19 +584,15 @@ def update_folder_tree(out_dir):
             parent="syn35023796",
         )
     )
-
+    os.remove("data_folder_structure.txt")
+    
 def main():
-    #syn = synapseclient.Synapse()
-    #syn.login(silent=True)
-    Synapse().client
     ## crawl through folder structure to get accessRequirementId
     folderIDs = get_data_folderIDs()
-    #pool = multiprocessing.Pool(10)
     #create a temporary directory under the current working directory
     out_dir = tempfile.mkdtemp(dir = os. getcwd())
     #get_AR_folders('/home/ec2-user/1KD-DCC/helpers/TEMP', 'syn29763372')
     get_AR_folders_temp = partial(get_AR_folders, out_dir)
-    #pdb.set_trace()
     results = map(get_AR_folders_temp, folderIDs)
     AR_folders = pd.concat(results)
     # update folder tree and remove temporary directory once done
@@ -677,8 +656,8 @@ def main():
             "clickWrap_state",
             "controlled_AR",
             "controlled_state",
-            #"requestId",
-            "submitterID",
+            "requestId",
+            #"submitterID",
             "firstName",
             "lastName",
             "userName",
