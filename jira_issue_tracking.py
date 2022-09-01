@@ -18,7 +18,46 @@ import requests
 import synapseclient
 from requests.auth import HTTPBasicAuth
 from synapseclient import Table
+from synapseclient.core.exceptions import (SynapseAuthenticationError,
+                                           SynapseNoCredentialsError)
 
+# adapted from challengeutils https://github.com/Sage-Bionetworks/challengeutils/pull/121/files to manage Synapse connection
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
+
+class Synapse:
+    """Define Synapse class"""
+
+    _synapse_client = None
+
+    @classmethod
+    def client(cls, syn_user=None, syn_pass=None, *args, **kwargs):
+        """Gets a logged in instance of the synapseclient.
+        Args:
+            syn_user: Synapse username
+            syn_pass: Synpase password
+        Returns:
+            logged in synapse client
+        """
+        if not cls._synapse_client:
+            LOGGER.debug("Getting a new Synapse client.")
+            cls._synapse_client = synapseclient.Synapse(*args, **kwargs)
+            try:
+                if os.getenv("SCHEDULED_JOB_SECRETS") is not None:
+                    secrets = json.loads(os.getenv("SCHEDULED_JOB_SECRETS"))
+                    cls._synapse_client.login(silent=True, authToken=secrets["SYNAPSE_AUTH_TOKEN"])
+                else:
+                    cls._synapse_client.login(authToken = os.getenv("SYNAPSE_AUTH_TOKEN"),silent=True)
+            except SynapseAuthenticationError:
+                cls._synapse_client.login(syn_user, syn_pass, silent=True)
+
+        LOGGER.debug("Already have a Synapse client, returning it.")
+        return cls._synapse_client
+
+    @classmethod
+    def reset(cls):
+        """Change synapse connection"""
+        cls._synapse_client = None
 
 def create_issue(auth, summary : str, duedate : str, requestId : str, description : str):
    ## ticket creation section below 
@@ -154,26 +193,22 @@ def pull_issues(auth):
             log.columns = log.columns.to_flat_index()
             log.rename(columns=lambda x: x[0] + '_' + str(x[1]) if x[0] in ['status', 'createdOn', 'time_in_status'] else x[0], inplace = True)
             log = log[cols]
-            logs = pd.concat([logs, log],axis = 0, ignore_index=True)
          else:
             #if anythong other than status changed
             log = pd.DataFrame({**{'key':result['key'], 'requestId' : result['fields']['customfield_12178'], 'status_1': result['fields']['status']['name'], 'createdOn_1' : result['fields']['created']}},index=[0]).reset_index(drop=True)
             log['createdOn_1'] = log['createdOn_1'].apply(reformat_datetime)
             log['time_in_status_1'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn_1']
             log[['createdOn_1', 'time_in_status_1']] = log[['createdOn_1', 'time_in_status_1']].astype(str)
-            logs = pd.concat([logs, log],axis = 0, ignore_index=True)
       else: 
          log = pd.DataFrame({**{'key':result['key'], 'requestId' : result['fields']['customfield_12178'], 'status_1': result['fields']['status']['name'], 'createdOn_1' : result['fields']['created']}},index=[0]).reset_index(drop=True)
          log['createdOn_1'] = log['createdOn_1'].apply(reformat_datetime)
          log['time_in_status_1'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn_1']
          log[['createdOn_1', 'time_in_status_1']] = log[['createdOn_1', 'time_in_status_1']].astype(str)
-         logs = pd.concat([logs, log],axis = 0, ignore_index=True)
+      logs = pd.concat([logs, log],axis = 0, ignore_index=True)
    return (logs.reset_index(drop = True))
 
 def main():
-
-   syn = synapseclient.Synapse()
-   syn.login(silent=True)
+   syn = Synapse().client()
    auth = HTTPBasicAuth(os.environ.get("JIRA_EMAIL"), os.environ.get("JIRA_API_TOKEN"))
    # pull data request info from data request tracking table
    query = "SELECT * from syn33240664"
@@ -199,8 +234,7 @@ def main():
       for requestId in request_tracking.requestId.unique():
          description = f"{str(request_tracking.loc[request_tracking['requestId'] == requestId, 'firstName'].values[0])} {request_tracking.loc[request_tracking['requestId'] == requestId, 'lastName'].values[0]} from {request_tracking.loc[request_tracking['requestId'] == requestId, 'teamName'].values[0]} team requested access to {request_tracking.loc[request_tracking['requestId'] == requestId, 'SynapseID'].values[0]}. (Controlled_ID: {request_tracking.loc[request_tracking['requestId'] == requestId, 'controlled_AR'].values[0]})"
          create_issue(auth, summary, duedate, requestId, description)
-   # geneate changeLogs table
-   logs = pull_issues(auth)
+   # update changeLogs table
    results = syn.tableQuery("select * from syn33344572")
    delete_out = syn.delete(results)
    table_out = syn.store(Table("syn33344572", logs))
