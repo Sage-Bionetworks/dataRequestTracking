@@ -123,7 +123,7 @@ def reformat_datetime(date_time : str):
   date_time = date_time.replace(microsecond = 0, tzinfo = None)
   return (date_time)  
 
-def pull_issues(auth):
+def pull_active_issues(auth):
    url = "https://sagebionetworks.jira.com/rest/api/3/search"
    headers = {
       "Accept": "application/json",
@@ -135,7 +135,7 @@ def pull_issues(auth):
       "names",
       "changelog"
    ],
-   "jql": "project = ONEKD AND component = 'Data Access Request Process' AND status not in ('Approved', 'Final Denial', 'Closed')",
+   "jql": "project = ONEKD AND component = 'Data Access Request Process' AND status not in ('Approved', 'Final Denial', 'Closed', 'Cancelled')",
    "maxResults": 250,
    "fields": [
       "key", #issue number
@@ -208,6 +208,46 @@ def pull_issues(auth):
       logs = pd.concat([logs, log],axis = 0, ignore_index=True)
    return (logs.reset_index(drop = True))
 
+def pull_all_issues(auth):
+   url = "https://sagebionetworks.jira.com/rest/api/3/search"
+   headers = {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+   }
+
+   payload = json.dumps( {
+   "expand": [
+      "names",
+      "changelog"
+   ],
+   "jql": "project = ONEKD AND component = 'Data Access Request Process'",
+   "maxResults": 250,
+   "fields": [
+      "key", #issue number
+      "assignee",
+      "summary",
+      "status",
+      "customfield_12178",
+      "duedate", #for open status
+      "created"
+   ],
+   "startAt": 0
+   } )
+
+   response = requests.request(
+      "POST",
+      url,
+      data=payload,
+      headers=headers,
+      auth=auth
+   )
+
+   # convert json t dict
+   results = json.loads(response.text)
+   results = results['issues']
+   requestIds = [result['fields']['customfield_12178'] for result in results]
+   return(requestIds)
+
 def main():
    syn = Synapse().client()
    if os.getenv("SCHEDULED_JOB_SECRETS") is not None:
@@ -226,17 +266,13 @@ def main():
    # reformat the table 
    request_tracking = request_tracking.groupby(['requestId', 'controlled_AR','firstName', 'lastName', 'teamName']).apply(lambda x: ', '.join(list(x['SynapseID'].unique()))).reset_index()
    request_tracking.rename(columns = {0:'SynapseID'}, inplace = True)
-   logs = pull_issues(auth)
+   logs = pull_active_issues(auth)
+   tracked_requestId = pull_all_issues(auth)
    # generate new issue
    summary = 'New data request to 1kD'
    duedate = (date.today() + timedelta(days=2)).strftime('%Y-%m-%d')
-   if len(logs) != 0:
-      for requestId in request_tracking.requestId.unique():
-         if requestId not in logs.requestId.unique():
-            description = f"{str(request_tracking.loc[request_tracking['requestId'] == requestId, 'firstName'].values[0])} {request_tracking.loc[request_tracking['requestId'] == requestId, 'lastName'].values[0]} from {request_tracking.loc[request_tracking['requestId'] == requestId, 'teamName'].values[0]} team requested access to {request_tracking.loc[request_tracking['requestId'] == requestId, 'SynapseID'].values[0]}. (Controlled_ID: {request_tracking.loc[request_tracking['requestId'] == requestId, 'controlled_AR'].values[0]})"
-            create_issue(auth, summary, duedate, requestId, description)
-   else: 
-      for requestId in request_tracking.requestId.unique():
+   for requestId in request_tracking.requestId.unique():
+      if requestId not in tracked_requestId:
          description = f"{str(request_tracking.loc[request_tracking['requestId'] == requestId, 'firstName'].values[0])} {request_tracking.loc[request_tracking['requestId'] == requestId, 'lastName'].values[0]} from {request_tracking.loc[request_tracking['requestId'] == requestId, 'teamName'].values[0]} team requested access to {request_tracking.loc[request_tracking['requestId'] == requestId, 'SynapseID'].values[0]}. (Controlled_ID: {request_tracking.loc[request_tracking['requestId'] == requestId, 'controlled_AR'].values[0]})"
          create_issue(auth, summary, duedate, requestId, description)
    # update changeLogs table
