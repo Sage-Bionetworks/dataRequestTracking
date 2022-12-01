@@ -540,6 +540,7 @@ def update_table(tableName: str, df: pd.DataFrame):
     }
     results = syn.tableQuery(f"select * from {tables[tableName]}")
     delete_out = syn.delete(results)
+    pdb.set_trace()
     table_out = syn.store(Table(tables[tableName], df))
     prGreen(f"Done updating {tableName} table")
 
@@ -645,9 +646,9 @@ def main():
     # trim df_merged to only include requests being processed or be in process
     df_merged = df_merged[(df_merged[["clickWrap_AR","controlled_AR", "requestId"]].notnull().all(1)) | ((~df_merged["clickWrap_AR"].isnull()) & (df_merged["controlled_AR"].isnull()))].reset_index(drop=True)
     #update tables
-    #update_table("Data Request Tracking Table", df_merged)
+    update_table("Data Request Tracking Table", df_merged)
     update_table("Data Request changeLogs Table", logs)
-    #update_table("1kD Team Members", members)
+    update_table("1kD Team Members", members)
 
 
 if __name__ == "__main__":
