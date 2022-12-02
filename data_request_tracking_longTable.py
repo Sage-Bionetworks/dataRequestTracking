@@ -540,7 +540,6 @@ def update_table(tableName: str, df: pd.DataFrame):
     }
     results = syn.tableQuery(f"select * from {tables[tableName]}")
     delete_out = syn.delete(results)
-    pdb.set_trace()
     table_out = syn.store(Table(tables[tableName], df))
     prGreen(f"Done updating {tableName} table")
 
