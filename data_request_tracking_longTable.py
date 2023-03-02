@@ -584,7 +584,6 @@ def update_table(table_name: str, df: pd.DataFrame):
     table_out = syn.store(Table(tables[table_name], df))
     print_green(f"Done updating {table_name} table")
 
-
 def update_folder_tree(out_dir):
     """
     Function to update folder tree file
