@@ -4,16 +4,17 @@ Description: a script to generate data_request_tracking table, data request chan
              data structure tree and team member table for 1kD project
 Contributors: Dan Lu
 '''
+
 # import modules
 import json
 import logging
-import multiprocessing
 import os
 import pdb
 import re
 import shutil
 import subprocess
 import tempfile
+import typing
 from datetime import datetime
 from functools import partial
 from itertools import chain
@@ -66,13 +67,12 @@ class Synapse:
         cls._synapse_client = None
 
 
-def prGreen(t, st=None):  # print for success
-    """Function to print out message in green
+def print_green(t, st=None): 
+    """
+    Function to print out message in green
 
-    Args:
-        t (str): a string
-        st (str, optional): the latter string. Defaults to None. 
-        Use this when you want to print out the latter string.
+    :param t (str): a string
+    :param st (str, optional): the latter string. Defaults to None. Use this when you want to print out the latter string.
     """
     if st is None:
         print("\033[92m {}\033[00m".format(t))
@@ -80,123 +80,116 @@ def prGreen(t, st=None):  # print for success
         print("{}: \033[92m {}\033[00m".format(t, st))
 
 
-def get_userProfile(teamID: str, return_profile: bool = True) -> list:
-    """Function to get user profile and/id
-    Args:
-        teamID (str): 1kD team ID
-        return_profile (bool, optional): whether to return user profile. Defaults to True.
+def get_user_profile(team_id: str, return_profile: bool = True) -> list:
+    """
+    Function to get user profile and/or only user id
 
-    Returns:
-        list: userProfile (submitterID, firstName, lastName, userName, teamId, isAdmin, team) or only userIDs
+    :param team_id (str): 1kD team id
+    :param return_profile (bool, optional): whether to return user profile. Defaults to True.
+
+    :returns:  list: submitter_id, first_name, last_name, user_name, team_name or only user_id(s)
     """
     syn = Synapse().client()
-    members = list(syn.getTeamMembers(syn.getTeam(teamID)))
+    members = list(syn.getTeamMembers(syn.getTeam(team_id)))
     if return_profile:
         user_profile = pd.concat(
             [
                 pd.DataFrame(
-                    {**x["member"], **{"teamId": x["teamId"], "isAdmin": x["isAdmin"]}},
+                    {**x["member"], **{"team_id": x["teamId"]}},
                     index=[0],
                 )
                 for x in members
             ]
         )
-        user_profile.drop(columns="isIndividual", inplace = True)
-        user_profile["team"] = syn.getTeam(teamID)["name"]
-        return user_profile.rename(columns={"ownerId": "submitterID"})
+        user_profile["team_name"] = syn.getTeam(team_id)["name"]
+        user_profile.drop(columns=["isIndividual","team_id"], inplace = True)
+        return user_profile.rename(columns={"ownerId": "submitter_id","firstName": "first_name", "lastName": "last_name", "userName":"user_name"})
     else:
-        userIDs = [member["member"]["ownerId"] for member in members]
-        return userIDs
+        user_id = [member["member"]["ownerId"] for member in members]
+        return user_id
 
 
-def get_team_members() -> pd.DataFrame:
-    """Function to pull all team members
-
-    Returns:
-        pd.DataFrame: contains submitterID, firstName, lastName, userName, teamName
+def get_team_member() -> pd.DataFrame:
     """
-    syn = Synapse().client()
-    # get a list of team members
-    teamIDs = [
-        "3436722",
-        "3436721",
-        "3436720",
-        "3436719",
-        "3436718",
-        "3436509",
-        "3436717",
-        "3436716",
-        "3436713",
-        "3436714",
-    ]
-    team_members = pd.concat([get_userProfile(teamID) for teamID in teamIDs])
-    # update team name for DCC members
-    team_members["submitterID"].value_counts()
-    team_members.loc[
-        team_members["submitterID"].isin(["273995", "3445322", "3434599"]), "team"
-    ] = "1kD admins"
-    team_members.loc[
-        team_members["submitterID"].isin(["273995", "3445322", "3434599"]), "teamId"
-    ] = "3433360"
-    team_members.drop_duplicates(inplace=True)
-    team_members.drop(columns="isAdmin", inplace=True)
+    Function to pull team members and re-categorize team members if they are in ACT or admin team
 
-    # add governance team members
-    gov_team = ["273977", "3429359"]
-    gov_team_members = pd.concat(
-        [pd.DataFrame(syn.getUserProfile(member), index=[0]) for member in gov_team]
-    )[["ownerId", "firstName", "lastName", "userName"]]
-    gov_team_members["team"] = "1kD admins"
-    gov_team_members["teamId"] = "3433360"
-    gov_team_members.rename(columns={"ownerId": "submitterID"}, inplace=True)
-    members = pd.concat([team_members, gov_team_members])
-    members.drop(columns="teamId", inplace=True)
-    members.rename(columns={"team": "teamName"}, inplace=True)
+    :returns:  pd.DataFrame: submitter_id, first_name, last_name, user_name, team_name
+    """
+    # get a list of team members
+    team_ids = [
+        "3436722", #1kD_Connectome
+        "3436721", #1kD_InfantNaturalStatistics
+        "3436720", #1kD_BRAINRISE
+        "3436718", #1kD_KHULA
+        "3436509", #1kD_MicrobiomeBrainDevelopment
+        "3436717", #1kD_M4EFaD_LABS
+        "3436716", #1kD_Assembloids
+        "3436713", #1kD_DyadicSociometrics
+        "3436714", #1kD_First1000Daysdatabase
+        "3458847",#1kD_M4EFaD_BMT team
+        "3464137", #1kD_Stanford_Yeung team
+        "3460645" # 1kD_M4EFaD_Auckland
+    ]
+    members = pd.concat([get_user_profile(team_id) for team_id in team_ids])
+    # update team name for DCC members
+    admin = get_user_profile("3433360")
+    act = get_user_profile("464532")
+    members.loc[
+        members["submitter_id"].isin(admin['submitter_id'].values), "team_name"
+    ] = "1kD admins"
+    members.loc[
+        members["submitter_id"].isin(act['submitter_id'].values), "team_name"
+    ] = "ACT"
+    members.drop_duplicates(inplace=True)
     return members.reset_index(drop=True)
 
+def get_data_release_folder(folder_id) -> list:
+    """
+    Function to get data release folder ids in batch
 
-def get_data_folderIDs() -> list:
-    """Function to get Data Release foldersIDs
-
-    Returns:
-        list: Data Release folder SynapseIDs
+    :param folder_id (str): the parent folder id for data release folders if any
+    
+    :returns:  list: data release folder id
     """
     syn = Synapse().client()
     # get study folders
-    folders = list(syn.getChildren("syn26294912", includeTypes=["folder"]))
-    IDs = [f["id"] for f in folders]
+    folders = list(syn.getChildren(folder_id, includeTypes=["folder"]))
+    ids = [f["id"] for f in folders]
     # get Data_Release folders
-    synIDs = []
-    for id in IDs:
+    syn_ids = []
+    for id in ids:
         folders = list(syn.getChildren(id, includeTypes=["folder"]))
         for i in folders:
             if "Data" in i["name"]:
-                synIDs.append(i["id"])
-    return synIDs
+                syn_ids.append(i["id"])
+    return syn_ids
 
-def get_folder_tree(
-    temp_dir, dirpath, clickWrap_AR: str, controlled_AR: str, dirname_mappings={}
+def create_folder_tree(
+    temp_dir, dirpath, clickwrap_ar: str, controlled_ar: str, dirname_mappings={}
 ):
-    """Function to produces a depth indented listing of directory for a Synapse folder
-       and attach AR info
-    Args:
-        temp_dir : path for temp directory
-        dirpath: dirpath form synapseclient.walk
-        clickWrap_AR (str): clickWrap accessRequirement ID for the given folder
-        controlled_AR (str): controlled accessRequirement ID for the given folder
-    Returns: temporary directory is created in the temp_dir folder
+    """ 
+    Helper function to produces a depth indented listing of directory for a folder
+    
+    :param temp_dir (str): dirpath for temp directory
+    :param dirpath (str): dirpath form synapseclient.walk, i.e the folder and its id
+    :param clickwrap_ar (str): clickWrap accessRequirementId for the given folder
+    :param controlled_ar (str): controlled accessRequirementId for the given folder
+    :param dirname_mappings: DO NOT CHANGE. empty dictionary to update folder names for temp direcotires
+
+    :returns:  temporary directory is created in the temp_dir folder
     """
     added_ar = ""
-    if clickWrap_AR:
-        added_ar = f"{added_ar}_CW-{str(clickWrap_AR[0])}"
-    if controlled_AR and "CW" in added_ar:
-        added_ar = f"{added_ar},AR-{str(controlled_AR[0])}"
-    elif controlled_AR:
-        added_ar = f"{added_ar}_AR-{str(controlled_AR[0])}"
+    # append AR and synapse_id
+    if clickwrap_ar and controlled_ar:
+        added_ar = f"{added_ar}_CW-{str(clickwrap_ar)},AR-{str(controlled_ar)}"
+    elif clickwrap_ar:
+        added_ar = f"{added_ar}_CW-{str(clickwrap_ar)}"
+        
+    # update the temporary directory name
     if added_ar:
-        new_dirname = f"{dirpath[0]}{added_ar}"
+        new_dirname = f"{dirpath[0]}_{dirpath[1]}_{added_ar}"
     else:
-        new_dirname = dirpath[0]
+        new_dirname = f"{dirpath[0]}_{dirpath[1]}"
     structure = os.path.join(temp_dir, new_dirname)
     if os.path.dirname(structure) in dirname_mappings.keys():
         structure = structure.replace(
@@ -212,440 +205,461 @@ def get_folder_tree(
         os.mkdir(structure)
         dirname_mappings[os.path.join(temp_dir, dirpath[0])] = structure
 
+def get_ar(folder_id: str) -> typing.Generator[str, None, None]:
+    """
+    Function to retrieve paginated list of all access requirements associated with a folder.
 
-def get_AR_folders(out_dir, folderID) -> pd.DataFrame:
-    """function to get datafolders with AR information and to create temporary
-      folders in the out_dir to generate tree
-    Args:
-        out_dir (str): directory to houses the temporary folders
-        folderID (str): data release folder SynapseID
+    :param folder_id: a folder id that you'd like to retrieve access requirements for
 
-    Returns: pd.DataFrame: a dataframe contains data folder name, Synapse ID, clickWrap_AR and controlled_AR
+    :returns: a generator object of access requirements for the given folder
     """
     syn = Synapse().client()
-    folders = pd.DataFrame()
-    walkedPath = walk(syn, folderID, ["folder"])
+    for result in syn._GET_paginated(uri=f"/entity/{folder_id}/accessRequirement"):
+        yield result
+
+def ar_dict(folder_id: str) -> typing.Dict:
+    """
+    Function to parse out clickWrap and controlAccess access requirement id for a folder
+
+    :param folder_id: a folder id that you'd like to retrieve access requirement id for
+
+    :returns: a dictionary with keys: clickwrap_ar and controlled_ar
+    """
+    # get accessRequirementId for the target Entity
+    all_ar = [ar for ar in get_ar(folder_id)]
+    # parse out clickWrap and controlAccess accessRequirementId
+    results = {"clickwrap_ar":"", "controlled_ar" :""}
+    # some folders have multiple clickwrap_ars
+    results["clickwrap_ar"] = ",".join([str(ar["id"]) for ar in all_ar if not "isIDURequired" in ar.keys()])
+    results["controlled_ar"] = "".join([str(ar["id"]) for ar in all_ar if "isIDURequired" in ar.keys()])
+    return results
+
+def get_folder_tree(out_dir, folder_id) -> typing.Dict:
+    """
+    Function to get all access requirement ids for data release folder and its subfolders, and to create temporary
+    folders in the out_dir to generate tree
+
+    :param out_dir (str): directory to houses the temporary folders
+    :param folder_id (str): data release folder synapse_id
+
+    :returns:  a dictionary with keys: clickWrap and controlAccess
+    """
+    syn = Synapse().client()
+    walkedPath = walk(syn, folder_id, ["folder"])
     temp_dir = tempfile.mkdtemp(dir=out_dir)
     dirname_mappings = {}
+    results = {"clickwrap_ar": [], "controlled_ar" : []}
     for dirpath, dirname, filename in walkedPath:
-        folder = pd.DataFrame([dirpath], columns=["folder_name", "folder_ID"])
         # append ARs
-        clickWrap_AR, controlled_AR = get_accessRequirementIds(folder.folder_ID[0])
-        if clickWrap_AR:
-            folder["clickWrap_AR"] = str(clickWrap_AR[0])
-        if controlled_AR:
-            folder["controlled_AR"] = str(controlled_AR[0])
-        get_folder_tree(
-                temp_dir, dirpath, clickWrap_AR, controlled_AR, dirname_mappings
+        # dirpath is a tuple with first element as folder name and second element as folder id 
+        clickwrap_ar = ar_dict(dirpath[1])["clickwrap_ar"]
+        controlled_ar = ar_dict(dirpath[1])["controlled_ar"]
+        # only append non-missing and unique ARs
+        if clickwrap_ar:
+            for substr in clickwrap_ar.split(","):
+                if substr not in results["clickwrap_ar"]: 
+                    results["clickwrap_ar"].append(substr) 
+        if controlled_ar and controlled_ar not in results["controlled_ar"]: 
+            results["controlled_ar"].append(controlled_ar) 
+        create_folder_tree(
+                temp_dir, dirpath, clickwrap_ar, controlled_ar, dirname_mappings
             )
-        folders = pd.concat([folders, folder], ignore_index=True)
-    os.rename(temp_dir, os.path.join(out_dir, folderID))
-    return folders
-
-
-def get_accessRequirementIds(folderID: str) -> list:
-    """Function to get accessRequirementId for a given folder
-
-    Args:
-        folderID (str): folder SynapseID
-
-    Returns:
-        list: clickWrap_AR and controlled_AR
-    """
-    syn = Synapse().client()
-    # TODO: explore why this API called twice for each entity
-    all_ar = syn.restGET(uri=f"/entity/{folderID}/accessRequirement")["results"]
-    if all_ar:
-        clickWrap_AR = [ar["id"] for ar in all_ar if not "isIDURequired" in ar.keys()]
-        controlled_AR = [ar["id"] for ar in all_ar if "isIDURequired" in ar.keys()]
-    else:
-        clickWrap_AR = ""
-        controlled_AR = ""
-    return clickWrap_AR, controlled_AR
-
+    os.rename(temp_dir, os.path.join(out_dir, folder_id))
+    return results
 
 def from_iso_to_datetime(date_time: str):
-    """Function to convert ISO 8601 of UTC time to US/Pacific date time and drop milliseconds
+    """
+    Function to convert ISO 8601 of UTC time to US/Pacific date time and drop milliseconds
 
-    Args:
-        date_time (str): datetime string
+    :param date_time (str): datetime string
+
+    :returns: reformated datetime string
     """
     date_time = pd.to_datetime(date_time)
     date_time = date_time.dt.tz_convert("US/Pacific").dt.strftime("%Y-%m-%d %H:%M:%S")
     return pd.to_datetime(date_time)
 
-
-def get_requestIds(ar: list):
-    """Function to get unique requestIds for a given access requirement ID
-    Args:
-        ar (list): a list of submissions for a given access requirement ID
+def get_submission(accessRequirementId: str):
     """
-    requestIds = set([i["requestId"] for i in ar])
-    return requestIds
+    Function to retrieve a list of submissions to a given controlled access requirement id
 
+    :param accessRequirementId (str): a given controlled access requirement id
 
-def group_submissions(ar: list, requestIds: list, get_current: bool):
-    """Function to group submissions to a AR by requestId
-       requestId is the ID of the Request which is used to create this submission; this value
-       does not change even though a submitter resubmits the data request
-    Args:
-        ar(list): a list of submissions for a given access requirement ID
-        requestIds (list):  A list of requestId for an accessRequirementID
-        get_current (boolean): whether to get the current state of the submission
-    """
-    if get_current:
-        groups = [[i for i in ar if i["requestId"] == a][-1] for a in requestIds]
-        return groups
-    else:
-        groups = {a: [i for i in ar if i["requestId"] == a] for a in requestIds}
-        return groups
-
-
-def get_controlled_data_request(accessRequirementId: str):
-    """Function to pull data requestor's information and its IDUs
-    for approved data access to controlled data
-    Args: accessRequirementId - string of the accessRequiement ID
+    :returns: a list of submissions for a controlled access requirement id
     """
     syn = Synapse().client()
-    # get the access requirement lists for the requirementID
+    # get the access requirement lists for the access requirement id
     search_request = {"accessRequirementId": str(accessRequirementId)}
-    ar = syn.restPOST(
+    submissions = syn.restPOST(
         uri=f"/accessRequirement/{str(accessRequirementId)}/submissions",
         body=json.dumps(search_request),
     )["results"]
-    if ar:
-        requestIds = get_requestIds(ar)
-        grouped_submissions = group_submissions(ar, requestIds, get_current=True)
-        # convert list to dataframe
-        df = pd.json_normalize(grouped_submissions, max_level=1)
-        # drop modified on in researchProjectSnapshot
-        df.drop(columns=["researchProjectSnapshot.modifiedOn"], inplace=True)
-        df = pd.concat(
-            [
-                df.filter(regex="^researchProjectSnapshot", axis=1),
-                df[["subjectId", "state", "requestId", "modifiedOn"]],
-            ],
-            axis=1,
-        )
-        # trim and rename dataframe
-        df = df.rename(columns=lambda x: re.sub("^researchProjectSnapshot.", "", x))
-        df = df[
-            [
-                "subjectId",
-                "accessRequirementId",
-                "requestId",
-                "createdBy",
-                "institution",
-                "projectLead",
-                "intendedDataUseStatement",
-                "state",
-                "createdOn",
-                "modifiedOn"
-            ]
-        ]
-        df.rename(
-            columns={
-                "subjectId": "SynapseID",
-                "accessRequirementId": "controlled_AR",
-                "createdBy": "submitterID",
-                "intendedDataUseStatement": "IDU",
-            },
-            inplace=True,
-        )
-        # convert submittedOn and modifiedOn to datetime data type
-        date_cols = ["createdOn", "modifiedOn"]
-        df[date_cols] = df[date_cols].apply(from_iso_to_datetime)
-        df["total_duration"] = df["modifiedOn"] - df["createdOn"]
-        # recalculate total duration for submitted entry
-        df.loc[df.state == "SUBMITTED", "total_duration"] = (
-            datetime.now(pytz.timezone("US/Pacific")).replace(
-                microsecond=0, tzinfo=None
-            )
-            - df["createdOn"]
-        )
-        df[["createdOn", "modifiedOn", "total_duration"]] = df[
-            ["createdOn", "modifiedOn", "total_duration"]
-        ].astype(str)
-        df.loc[df.state == "SUBMITTED", "modifiedOn"] = ""
-        return df
+    return(submissions)
 
+def get_ar_folder_id(accessRequirementId: str):
+    """
+    Function to get the synapse id of a folder that has an access requirements 
+    (used to update synapse_id for data requests submitted from assay folders)
 
-def get_clickWrap_request(accessRequirementId: str, AR_folder: pd.DataFrame):
-    """Function to pull data request submitted via clickWrap
-    Args: accessRequirementId (str) - accessRequiement ID
-         AR_folder - dataframe contains folder_name, folder_ID, clickWrap_AR, and controlled_AR"
+    :param accessRequirementId (str): a given controlled access requirement id
+        
+    :returns: a data frame containing a folder id and its access requirement id
     """
     syn = Synapse().client()
-    # Retrieve the AccessorGroup for a accessRequirementId
+    ar = syn.restGET(f"/accessRequirement/{accessRequirementId}")
+    ar = pd.DataFrame.from_dict(ar)[["id","subjectIds"]]
+    ar["synapse_id"]= ar["subjectIds"].apply(lambda col: col["id"])
+    ar.drop(columns= "subjectIds", inplace=True)
+    ar.rename(columns={"id":"accessRequirementId"}, inplace=True)
+    ar = ar.astype("string")
+    return ar
+
+def get_request_id(submission: list):
+    """
+    Function to get request ids for a given controlled access requirement id. The requestId is 
+    the id of the request for a submitter to a folder; this value
+    does not change even though a submitter resubmits the data request(multiple submission ids). 
+
+    :param submission (list): a list of submissions for a given controlled access requirement id
+
+    :returns: a set of request ids
+    """
+    request_id = set([i["requestId"] for i in submission])
+    return request_id
+
+def group_submissions(submission: list, get_lastest: bool):
+    """
+    Function to group submissions to a controlled access requirement id by request ids. There are one or more submissions 
+    each request id
+
+    :param submission (list): a list of submissions for a given controlled access requirement id
+    :param get_lastest (boolean): whether to get the latest submission for the request id
+
+    :returns: a list of latest submissions for the given controlled access requirement id if get_lastest is True. 
+    Otherwise, a list of all submissions for a controlled access requirement id and grouped by request id.
+    """
+    if get_lastest:
+        groups = [[i for i in submission if i["requestId"] == a][-1] for a in get_request_id(submission)]
+        return groups
+    else:
+        groups = {a: [i for i in submission if i["requestId"] == a] for a in get_request_id(submission)}
+        return groups
+
+def get_latest_request(submission: list) -> pd.DataFrame:
+    """
+    Function to get the latest data request submitted from a user to a controlled access requirement id
+
+    :param submission (list): a list of submissions for a given controlled access requirement id
+
+    :returns: a data frame of the latest data requests to a controlled access requirement id
+    """
+    latest = group_submissions(submission, get_lastest=True)
+    # convert list to dataframe
+    df = pd.json_normalize(latest, max_level=1)
+    # drop modifiedOn in researchProjectSnapshot since it's the same as the createdOn of the snapshot
+    df.drop(columns=["researchProjectSnapshot.id","researchProjectSnapshot.modifiedOn", "researchProjectSnapshot.modifiedBy"], inplace=True)
+    df = pd.concat(
+        [
+            df.filter(regex="^researchProjectSnapshot", axis=1),
+            df[["subjectId", "state", "requestId", "id","submittedBy","modifiedOn","modifiedBy"]],
+        ],
+        axis=1,
+    )
+    # trim and rename dataframe
+    df = df.rename(columns=lambda x: re.sub("^researchProjectSnapshot.", "", x))
+    df = df[
+        [
+            "subjectId",
+            "accessRequirementId",
+            "requestId",
+            "id",
+            "submittedBy",
+            "institution",
+            "projectLead",
+            "intendedDataUseStatement",
+            "state",
+            "modifiedBy",
+            "createdOn",
+            "modifiedOn"
+            
+        ]
+    ]
+    # update subjectId since requestors might submit request from assay folders instead of dataType folders that ar is associated with
+    ar_folder = get_ar_folder_id(df["accessRequirementId"].values[0])
+    df['subjectId'] = df['accessRequirementId'].map(dict(zip(ar_folder["accessRequirementId"],ar_folder["synapse_id"])))
+    # rename columns
+    df.rename(
+        columns={
+            "subjectId": "synapse_id",
+            "accessRequirementId": "controlled_ar",
+            "requestId": "request_id",
+            "id": "submission_id",
+            "submittedBy": "submitter_id",
+            "intendedDataUseStatement": "IDU",
+            "projectLead": "project_lead",
+            "state": "controlled_state",
+            "modifiedBy":"reviewer_id",
+            "createdOn": "created_on",
+            "modifiedOn": "modified_on"
+        },
+        inplace=True,
+    )
+    # convert submittedOn and modifiedOn to datetime data type
+    date_cols = ["created_on", "modified_on"]
+    df[date_cols] = df[date_cols].apply(from_iso_to_datetime)
+    df["total_duration"] = df["modified_on"] - df["created_on"]
+    # recalculate total duration for submitted entry
+    df.loc[df.controlled_state == "SUBMITTED", "total_duration"] = (
+        datetime.now(pytz.timezone("US/Pacific")).replace(
+            microsecond=0, tzinfo=None
+        )
+        - df["created_on"]
+    )
+    # convert date_time columns to string columns
+    df[["created_on", "modified_on", "total_duration"]] = df[
+        ["created_on", "modified_on", "total_duration"]
+    ].astype(str)
+    df.loc[df.controlled_state == "SUBMITTED", "modified_on"] = ""
+    df.loc[df.controlled_state == "SUBMITTED", "reviewer_id"] = ""
+    return df
+
+def data_request_logs(submission: list) -> pd.DataFrame:
+    """
+    Function to generate logs for each data request
+
+    :param submission (list): a list of submissions for a given controlled access requirement id
+
+    :returns: a data frame of all data requests to a controlled access requirement id
+    """
+    logs = pd.DataFrame()
+    grouped_submissions = group_submissions(submission, get_lastest=False)
+    for key, value in grouped_submissions.items():
+        log = pd.DataFrame()
+        for idx in range(len(value)):
+        # loop through submissions
+            submission = pd.json_normalize(value[idx], max_level=1)
+            if submission["state"].values[0] == "REJECTED":
+                # extract reject reason for rejected submission
+                submission = pd.concat(
+                    [
+                        submission.filter(regex="^researchProjectSnapshot", axis=1),
+                        submission[
+                            ["requestId", "id", "subjectId","submittedBy","submittedOn", "modifiedOn", "state", "rejectedReason","modifiedBy"]
+                        ],
+                    ],
+                    axis=1,
+                )
+                # trim and rename dataframe
+                submission.drop(columns=["researchProjectSnapshot.id","researchProjectSnapshot.modifiedOn", "researchProjectSnapshot.modifiedBy"],inplace=True)
+                submission = submission.rename(
+                    columns=lambda x: re.sub("^researchProjectSnapshot.", "", x)
+                )
+                submission = submission[
+                    [
+                        "requestId",
+                        "id",
+                        "subjectId",
+                        "accessRequirementId",
+                        "submittedBy",
+                        "state", 
+                        "institution",
+                        "projectLead",
+                        "intendedDataUseStatement",
+                        "rejectedReason",
+                        "modifiedBy",
+                        "submittedOn",
+                        "modifiedOn"
+                    ]
+                ]
+            else:
+                submission = pd.json_normalize(value[idx], max_level=1)
+                submission = pd.concat(
+                    [
+                        submission.filter(regex="^researchProjectSnapshot", axis=1),
+                        submission[["requestId", "id", "subjectId","submittedBy","submittedOn", "modifiedOn", "state", "modifiedBy"]],
+                    ],
+                    axis=1,
+                )
+                # trim and rename dataframe
+                submission.drop(columns=["researchProjectSnapshot.id","researchProjectSnapshot.modifiedOn", "researchProjectSnapshot.modifiedBy"],inplace=True)
+                submission = submission.rename(
+                    columns=lambda x: re.sub("^researchProjectSnapshot.", "", x)
+                )
+                submission = submission[
+                    [
+                        "requestId",
+                        "id",
+                        "subjectId",
+                        "accessRequirementId",
+                        "submittedBy",
+                        "state", 
+                        "institution",
+                        "projectLead",
+                        "intendedDataUseStatement",
+                        "modifiedBy",
+                        "submittedOn",
+                        "modifiedOn"
+                    ]
+                ]
+            # convert time to pst and calculate processing_time
+            submission[["submittedOn", "modifiedOn"]] = submission[
+                    ["submittedOn", "modifiedOn"]
+                ].apply(from_iso_to_datetime)
+            if value[idx]["state"] == "SUBMITTED":
+                # calculate processing_time for SUBMITTED request (no modifiedOn date, no reviewer)
+                submission["processing_time"] = (
+                    datetime.now(pytz.timezone("US/Pacific")).replace(
+                        microsecond=0, tzinfo=None
+                    )
+                    - submission["submittedOn"]
+                )
+                submission[["submittedOn", "modifiedOn", "processing_time"]] = submission[
+                    ["submittedOn", "modifiedOn", "processing_time"]
+                ].astype(str)
+                submission["modifiedOn"] = ""
+                submission["modifiedBy"] = ""
+            else:
+                # calculate processing_time for other request (no modifiedOn date)
+                submission["processing_time"] = (
+                    submission["modifiedOn"] - submission["submittedOn"]
+                )
+                submission[["submittedOn", "modifiedOn", "processing_time"]] = submission[
+                    ["submittedOn", "modifiedOn", "processing_time"]
+                ].astype(str)
+
+            # add state_order
+            submission["state_order"] = idx + 1
+            # update subjectId since requestors might submit request from assay folders instead of dataType folders that ar is associated with
+            ar_folder = get_ar_folder_id(submission["accessRequirementId"].values[0])
+            submission['subjectId'] = submission['accessRequirementId'].map(dict(zip(ar_folder["accessRequirementId"],ar_folder["synapse_id"])))
+            log = pd.concat([log, submission], axis=0, ignore_index=True)
+        logs = pd.concat([logs, log], axis=0, ignore_index=True)
+    logs.rename(columns = {"requestId": "request_id", "id": "submission_id", "subjectId": "synapse_id","accessRequirementId": "controlled_ar","submittedBy": "submitter_id","intendedDataUseStatement":"IDU","modifiedBy":"reviewer_id","submittedOn": "submitted_on", "modifiedOn": "modified_on", "state": "controlled_state","projectLead": "project_lead"}, inplace= True)
+    return logs
+
+
+def get_clickwrap_request(accessRequirementId: str):
+    """
+    Function to pull data request submitted via clickWrap
+
+    :param accessRequirementId (str): a clickWrap access requirement id
+    
+    :returns: a data frame of all data requests to a clickWrap access requirement id, including submitter_id, synapse_id, clickwrap_ar
+    """
+    syn = Synapse().client()
+    # retrieving a page of AccessorGroup
     accessRequirementId = str(accessRequirementId)
     search_request = {"accessRequirementId": accessRequirementId}
-    df_ag = pd.DataFrame(
+    ag = pd.DataFrame(
         syn.restPOST(uri="/accessApproval/group", body=json.dumps(search_request))[
             "results"
         ]
-    )[["accessRequirementId", "submitterId"]]
-    # get and trim accessRequirement description
-    df_ar = AR_folder.loc[AR_folder["clickWrap_AR"] == accessRequirementId,["clickWrap_AR", "folder_ID", "controlled_AR"],].drop_duplicates()
-    df_ar.rename(
-        columns={
-            "folder_ID": "SynapseID",
-            "clickWrap_AR": "accessRequirementId",
-        },
-        inplace=True,
     )
-    # merge with AccessorGroup
-    df = df_ar.merge(df_ag, how="cross")[
-        [
-            "SynapseID",
-            "accessRequirementId_x",
-            "submitterId",
-            "controlled_AR",
-        ]
-    ]
-    df.rename(
-        columns={
-            "accessRequirementId_x": "clickWrap_AR",
-            "submitterId": "submitterID"
-        },
-        inplace=True,
-    )
-    df["state"] = "Accepted"
-    return df
+    # generate clickwrap_request table only if AccessApprovalInfo available
+    if not ag.empty:
+        # retrieve subjectIds for each accessRequirementId
+        cw = get_ar_folder_id(accessRequirementId)
+        # add submitter_id
+        ag = ag[["accessRequirementId", "submitterId"]].astype("string")
+        cw = cw.merge(ag, how="left", on="accessRequirementId")
+        cw.rename(columns={"submitterId":"submitter_id", "accessRequirementId":"clickwrap_ar"}, inplace=True)
+        cw["clickwrap_state"] = "Accepted"
+        return cw
 
-
-def data_request_processing_logs(accessRequirementId: str) -> pd.DataFrame:
-    """Function to trimmed processing logs for each data request
-
-    Args:
-        accessRequirementId (str): accessRequirement ID
-
-    Returns:
-        pd.DataFrame: a dataframe contains all data request states (requestID)
+def update_table(table_name: str, df: pd.DataFrame):
     """
-    syn = Synapse().client()
-    accessRequirementId = str(accessRequirementId)
-    search_request = {"accessRequirementId": accessRequirementId}
-    ar = syn.restPOST(
-        uri=f"/accessRequirement/{accessRequirementId}/submissions",
-        body=json.dumps(search_request),
-    )["results"]
-    logs = pd.DataFrame()
-    if ar:
-        requestIds = get_requestIds(ar)
-        grouped_submissions = group_submissions(ar, requestIds, get_current=False)
-        for key, value in grouped_submissions.items():
-            log = pd.DataFrame()
-            for idx in range(len(value)):
-                event = pd.json_normalize(value[idx], max_level=1)
-                if event["state"].values[0] == "REJECTED":
-                    # extract reject reason for rejected event
-                    event = pd.concat(
-                        [
-                            event.filter(regex="^researchProjectSnapshot", axis=1),
-                            event[
-                                ["submittedOn", "modifiedOn", "state", "rejectedReason"]
-                            ],
-                        ],
-                        axis=1,
-                    )
-                    # trim and rename dataframe
-                    event.drop(
-                        columns=[
-                            "researchProjectSnapshot.modifiedOn",
-                        ],
-                        inplace=True,
-                    )
-                    event = event.rename(
-                        columns=lambda x: re.sub("^researchProjectSnapshot.", "", x)
-                    )
-                    event = event[
-                        [
-                            "state",
-                            "intendedDataUseStatement",
-                            "rejectedReason",
-                            "submittedOn",
-                            "modifiedOn",
-                        ]
-                    ]
-                else:
-                    event = pd.json_normalize(value[idx], max_level=1)
-                    event = pd.concat(
-                        [
-                            event.filter(regex="^researchProjectSnapshot", axis=1),
-                            event[["submittedOn", "modifiedOn", "state"]],
-                        ],
-                        axis=1,
-                    )
-                    # trim and rename dataframe
-                    event.drop(
-                        columns=[
-                            "researchProjectSnapshot.modifiedOn",
-                        ],
-                        inplace=True,
-                    )
-                    event = event.rename(
-                        columns=lambda x: re.sub("^researchProjectSnapshot.", "", x)
-                    )
-                    event = event[
-                        [
-                            "state",
-                            "intendedDataUseStatement",
-                            "submittedOn",
-                            "modifiedOn",
-                        ]
-                    ]
-                # convert time to pst and calculate time_in_status
-                event[["submittedOn", "modifiedOn"]] = event[
-                        ["submittedOn", "modifiedOn"]
-                    ].apply(from_iso_to_datetime)
-                if value[idx]["state"] == "SUBMITTED":
-                    # calculate time_in_status for SUBMITTED request (no modifiedOn date)
-                    event["time_in_status"] = (
-                        datetime.now(pytz.timezone("US/Pacific")).replace(
-                            microsecond=0, tzinfo=None
-                        )
-                        - event["submittedOn"]
-                    )
-                    event[["submittedOn", "modifiedOn", "time_in_status"]] = event[
-                        ["submittedOn", "modifiedOn", "time_in_status"]
-                    ].astype(str)
-                    event["modifiedOn"] = ""
-                else:
-                    event["time_in_status"] = (
-                        event["modifiedOn"] - event["submittedOn"]
-                    )
-                    event[["submittedOn", "modifiedOn", "time_in_status"]] = event[
-                        ["submittedOn", "modifiedOn", "time_in_status"]
-                    ].astype(str)
-                event['state_order'] = idx + 1
-                log = pd.concat([log, event], axis=0, ignore_index=True)
-            log["requestId"] = key
-            logs = pd.concat([logs, log], axis=0, ignore_index=True)
-        logs.rename(columns = {"intendedDataUseStatement":"IDU"}, inplace= True)
-        return logs
+    Function to update table with table name
 
-
-def update_table(tableName: str, df: pd.DataFrame):
-    """Function to update table with table name
-
-    Args:
-        tableName (str): table name
-        df (pd.DataFrame): the data frame to be saved
+    :param table_name (str): a table name
+    :param df (pd.DataFrame): the data frame to be saved
     """
     syn = Synapse().client()
     tables = {
-        "Data Request Tracking Table": "syn33240664",
-        "Data Request changeLogs Table": "syn35382746",
-        '1kD Team Members': "syn35048407",
+        "Data Request Tracking Table": "syn51086692",
+        "Data Request changeLogs Table": "syn51086699",
+        "1kD Team Members": "syn35048407",
     }
-    results = syn.tableQuery(f"select * from {tables[tableName]}")
+    results = syn.tableQuery(f"select * from {tables[table_name]}")
     delete_out = syn.delete(results)
-    table_out = syn.store(Table(tables[tableName], df))
-    prGreen(f"Done updating {tableName} table")
-
+    table_out = syn.store(Table(tables[table_name], df))
+    print_green(f"Done updating {table_name} table")
 
 def update_folder_tree(out_dir):
-    syn = Synapse().client()
-    file = open("data_folder_structure.txt", "w")
-    subprocess.run(["tree", "-d", out_dir], stdout=file)
-    table_out = syn.store(
-        File(
-            "data_folder_structure.txt",
-            description="1kD data folder structure and AR setting",
-            parent="syn35023796",
-        )
-    )
-    os.remove("data_folder_structure.txt")
+    """
+    Function to update folder tree file
 
+    :param out_dir (str): the directory saves the temp folders created in get_folder_tree()
+    """
+    syn = Synapse().client()
+    with open("data_folder_structure.txt", "w") as file:
+        subprocess.run(["tree", "-d", out_dir], stdout=file)
+        table_out = syn.store(
+            File(
+                "data_folder_structure.txt",
+                description="1kD data folder structure and access requirement setting",
+                parent="syn35023796",
+            )
+        )
+        os.remove("data_folder_structure.txt")
+        
 def main():
     Synapse().client()
     ## crawl through folder structure to get accessRequirementId
-    folderIDs = get_data_folderIDs()
+    folder_ids = get_data_release_folder("syn26294912")
     #create a temporary directory under the current working directory
     out_dir = tempfile.mkdtemp(dir = os. getcwd())
-    #get_AR_folders('/home/ec2-user/1KD-DCC/helpers/TEMP', 'syn29763372')
-    get_AR_folders_temp = partial(get_AR_folders, out_dir)
-    results = map(get_AR_folders_temp, folderIDs)
-    AR_folders = pd.concat(results)
+    get_folder_tree_temp = partial(get_folder_tree, out_dir)
+    results = {"clickwrap_ar": [], "controlled_ar" : []}
+    for folder_id in folder_ids:
+        result = get_folder_tree_temp(folder_id)
+        results["clickwrap_ar"].append(result["clickwrap_ar"])
+        results["controlled_ar"].append(result["controlled_ar"])
     # update folder tree and remove temporary directory once done
     update_folder_tree(out_dir)
     shutil.rmtree(out_dir)
-    # get accessRequirementIds and drop duplicates
-    clickWrap_ARs = np.unique(AR_folders['clickWrap_AR'].dropna()) 
-    controlled_ARs = np.unique(AR_folders['controlled_AR'].dropna())
+    # drop duplicates
+    clickwrap_ars = set(chain.from_iterable(results["clickwrap_ar"]))
+    controlled_ars = set(chain.from_iterable(results["controlled_ar"]))
     ## genetate data request log table
     logs = pd.DataFrame()
-    for controlled_AR in controlled_ARs:
-        log = data_request_processing_logs(controlled_AR)
-        logs = pd.concat([logs, log], axis=0, ignore_index=True)
-    ## pull data request info
-    controlled_requests = pd.DataFrame()
-    for controlled_AR in controlled_ARs:
-        controlled_request = get_controlled_data_request(controlled_AR)
-        controlled_requests = pd.concat([controlled_requests, controlled_request])
-
-    clickWrap_requests = pd.DataFrame()
-    for clickWrap_AR in clickWrap_ARs:
-        clickWrap_request = get_clickWrap_request(clickWrap_AR, AR_folders)
-        clickWrap_requests = pd.concat([clickWrap_requests, clickWrap_request])
-    
-    # add clickWrap_AR to controlled_requests
-    controlled_requests["clickWrap_AR"] = controlled_requests["SynapseID"].map(
-        dict(zip(AR_folders["folder_ID"], AR_folders["clickWrap_AR"]))
-    )
-    # merge the click-wrap and controlled data requests, not use SynapseID here since one pair of clickWrap_AR and controlled_AR appplied to multiple entities
-    controlled_requests = controlled_requests.set_index(
-        ["clickWrap_AR", "controlled_AR", "submitterID"]
-    )
-    clickWrap_requests = clickWrap_requests.set_index(
-        ["clickWrap_AR", "controlled_AR", "submitterID"]
-    )
-    # merge controlled and clickwrap
-    df_merged = pd.merge(
-        controlled_requests,
-        clickWrap_requests,
-        how="outer",
-        left_index=True,
-        right_index=True,
-    )
-    df_merged.reset_index(inplace=True)
-    df_merged.drop(columns=["SynapseID_x"], inplace=True)
-    df_merged.rename(
-        columns={
-            "state_x": "controlled_state",
-            "state_y": "clickWrap_state",
-            "SynapseID_y": "SynapseID",
-        },
-        inplace=True,
+    latest_requests = pd.DataFrame()
+    for controlled_ar in controlled_ars:
+        submissions = get_submission(controlled_ar)
+        if submissions: 
+            log = data_request_logs(submissions)
+            logs = pd.concat([logs, log], axis=0, ignore_index=True)
+            latest_request = get_latest_request(submissions)
+            latest_requests = pd.concat([latest_requests, latest_request], axis=0, ignore_index=True)
+    clickwrap_requests = pd.DataFrame()
+    for clickwrap_ar in clickwrap_ars:
+        clickwrap_request = get_clickwrap_request(clickwrap_ar)
+        clickwrap_requests = pd.concat([clickwrap_requests, clickwrap_request], axis=0, ignore_index=True)
+    # regenerate accessRequirementId column since some folders can have multiple clickwrap_ar
+    clickwrap_requests.groupby(["synapse_id", "submitter_id"])["clickwrap_ar"].apply(lambda x: ",".join(x)).reset_index()
+    # merge the click-wrap and latest controlled data requests
+    ar_merged = pd.merge(
+        latest_requests,
+        clickwrap_requests,
+        how="left",
+        on=["synapse_id", "submitter_id"]
     )
     # add user profile
-    members = get_team_members()
-    df_merged = df_merged.merge(members, how="left", on="submitterID")
-    df_merged = df_merged[
-        [
-            "SynapseID",
-            "clickWrap_AR",
-            "clickWrap_state",
-            "controlled_AR",
-            "controlled_state",
-            "requestId",
-            #"submitterID",
-            "firstName",
-            "lastName",
-            "userName",
-            "teamName",
-            "institution",
-            "projectLead",
-            "IDU",
-            "createdOn",
-            "modifiedOn",
-            "total_duration",
-        ]
-    ]
-    # trim df_merged to only include requests being processed or be in process
-    df_merged = df_merged[(df_merged[["clickWrap_AR","controlled_AR", "requestId"]].notnull().all(1)) | ((~df_merged["clickWrap_AR"].isnull()) & (df_merged["controlled_AR"].isnull()))].reset_index(drop=True)
+    members = get_team_member()
+    ar_merged = ar_merged.merge(members, how="left", on="submitter_id")
+    ar_merged.drop(columns=["submitter_id"], inplace = True)
+
+    logs = logs.merge(members, how="left", on="submitter_id")
+    logs[["first_name","last_name"]] = logs[["first_name","last_name"]].astype(str)
+    logs["submitter"] = logs[["first_name","last_name"]].agg(' '.join, axis=1)
+    logs.drop(columns=["submitter_id","first_name","last_name", "user_name"], inplace = True)
+
+    #truncate IDU column 
+    ar_merged['IDU'] = ar_merged['IDU'].str[:1000]
+    logs['IDU'] = logs['IDU'].str[:1000]
+    logs['rejectedReason'] = logs['rejectedReason'].str[:1000]
+
     #update tables
-    update_table("Data Request Tracking Table", df_merged)
+    update_table("Data Request Tracking Table", ar_merged)
     update_table("Data Request changeLogs Table", logs)
     update_table("1kD Team Members", members)
 
