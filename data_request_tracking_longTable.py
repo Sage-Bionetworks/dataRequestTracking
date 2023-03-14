@@ -421,6 +421,8 @@ def get_latest_request(submission: list) -> pd.DataFrame:
     ].astype(str)
     df.loc[df.controlled_state == "SUBMITTED", "modified_on"] = ""
     df.loc[df.controlled_state == "SUBMITTED", "reviewer_id"] = ""
+    # get rid of Non-ASCII characters
+    df.IDU.replace({r'[^\x00-\x7F]+':''}, regex=True, inplace=True)
     return df
 
 def data_request_logs(submission: list) -> pd.DataFrame:
@@ -535,6 +537,8 @@ def data_request_logs(submission: list) -> pd.DataFrame:
             log = pd.concat([log, submission], axis=0, ignore_index=True)
         logs = pd.concat([logs, log], axis=0, ignore_index=True)
     logs.rename(columns = {"requestId": "request_id", "id": "submission_id", "subjectId": "synapse_id","accessRequirementId": "controlled_ar","submittedBy": "submitter_id","intendedDataUseStatement":"IDU","modifiedBy":"reviewer_id","submittedOn": "submitted_on", "modifiedOn": "modified_on", "state": "controlled_state","projectLead": "project_lead"}, inplace= True)
+    # get rid of Non-ASCII characters
+    logs.IDU.replace({r'[^\x00-\x7F]+':''}, regex=True, inplace=True)
     return logs
 
 
@@ -601,7 +605,40 @@ def update_folder_tree(out_dir):
             )
         )
         os.remove("data_folder_structure.txt")
-        
+
+def generate_idu_wiki(df: pd.DataFrame):
+    """
+    Function to generate 1kD Data Use Statements Wiki
+
+    :param table_name (str): a table name from which we pull approved data requests
+    :param df (pd.DataFrame): the data frame to be saved
+    """  
+    syn = Synapse().client()
+    # filter out APPROVED data requests
+    df = df.loc[df['controlled_state'] == 'APPROVED', ]
+
+    # append folder names
+    df['folder_name'] = df.apply(lambda x: syn.get(x['synapse_id'], downloadFile = False)['name'], axis=1)
+    df['team_folder'] = df['folder_name'].str.split('_').str[:-1].str.join('_')
+
+    # sort by team_folder and folder_name
+    df.sort_values(by=['folder_name', 'team_folder'], inplace = True)
+    df = df.reset_index()
+    #grab the wiki you want to update
+    wiki = syn.getWiki(owner= "syn26133760",subpageId='621404')
+
+    #build the wiki md 
+    wiki.markdown = ""
+    for team in df.team_folder.unique():
+        temp_df = df.loc[df['team_folder'] == team,]
+        wiki.markdown += f"### {team} Access Requests "
+        for x in temp_df.index:
+            wiki.markdown += "\n" + "\n **Request ID:** " + str(temp_df['submission_id'][x]) + "\n **Requested Data:** " +  "["+ temp_df['folder_name'][x] +"]("  + temp_df['synapse_id'][x] +")" +"\n **Status**: " + temp_df['controlled_state'][x] + "\n **Decision Date: **" + temp_df['modified_on'][x] + "\n **Project Lead: **" + temp_df['project_lead'][x] + "\n **IDU Statement: **"  + temp_df['IDU'][x] + '\n' 
+
+    #update the wiki
+    wiki = syn.store(wiki)
+
+
 def main():
     Synapse().client()
     ## crawl through folder structure to get accessRequirementId
@@ -652,16 +689,17 @@ def main():
     logs[["first_name","last_name"]] = logs[["first_name","last_name"]].astype(str)
     logs["submitter"] = logs[["first_name","last_name"]].agg(' '.join, axis=1)
     logs.drop(columns=["submitter_id","first_name","last_name", "user_name"], inplace = True)
-
+    
     #truncate IDU column 
-    ar_merged['IDU'] = ar_merged['IDU'].str[:1000]
-    logs['IDU'] = logs['IDU'].str[:1000]
-    logs['rejectedReason'] = logs['rejectedReason'].str[:1000]
+    #ar_merged['IDU'] = ar_merged['IDU'].str[:1000]
+    #logs['IDU'] = logs['IDU'].str[:1000]
+    #logs['rejectedReason'] = logs['rejectedReason'].str[:1000]
 
-    #update tables
+    #update tables and wiki
     update_table("Data Request Tracking Table", ar_merged)
     update_table("Data Request changeLogs Table", logs)
     update_table("1kD Team Members", members)
+    generate_idu_wiki(ar_merged)
 
 
 if __name__ == "__main__":
