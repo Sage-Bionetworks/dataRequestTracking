@@ -422,7 +422,7 @@ def get_latest_request(submission: list) -> pd.DataFrame:
     df.loc[df.controlled_state == "SUBMITTED", "modified_on"] = ""
     df.loc[df.controlled_state == "SUBMITTED", "reviewer_id"] = ""
     # get rid of Non-ASCII characters
-    df.IDU.replace({r'[^\x00-\x7F]+':''}, regex=True, inplace=True)
+    df.IDU.replace({r'[^\x00-\x7F]+':' '}, regex=True, inplace=True)
     return df
 
 def data_request_logs(submission: list) -> pd.DataFrame:
@@ -538,7 +538,7 @@ def data_request_logs(submission: list) -> pd.DataFrame:
         logs = pd.concat([logs, log], axis=0, ignore_index=True)
     logs.rename(columns = {"requestId": "request_id", "id": "submission_id", "subjectId": "synapse_id","accessRequirementId": "controlled_ar","submittedBy": "submitter_id","intendedDataUseStatement":"IDU","modifiedBy":"reviewer_id","submittedOn": "submitted_on", "modifiedOn": "modified_on", "state": "controlled_state","projectLead": "project_lead"}, inplace= True)
     # get rid of Non-ASCII characters
-    logs.IDU.replace({r'[^\x00-\x7F]+':''}, regex=True, inplace=True)
+    logs.IDU.replace({r'[^\x00-\x7F]+':' '}, regex=True, inplace=True)
     return logs
 
 
@@ -691,11 +691,6 @@ def main():
     logs["submitter"] = logs[["first_name","last_name"]].agg(' '.join, axis=1)
     logs.drop(columns=["submitter_id","first_name","last_name", "user_name"], inplace = True)
     
-    #truncate IDU column 
-    #ar_merged['IDU'] = ar_merged['IDU'].str[:1000]
-    #logs['IDU'] = logs['IDU'].str[:1000]
-    #logs['rejectedReason'] = logs['rejectedReason'].str[:1000]
-
     #update tables and wiki
     update_table("Data Request Tracking Table", ar_merged)
     update_table("Data Request changeLogs Table", logs)
