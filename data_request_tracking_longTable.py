@@ -580,8 +580,7 @@ def update_table(table_name: str, df: pd.DataFrame):
     syn = Synapse().client()
     tables = {
         "Data Request Tracking Table": "syn51086692",
-        "Data Request changeLogs Table": "syn51086699",
-        "1kD Team Members": "syn35048407",
+        "Data Request changeLogs Table": "syn51086699"
     }
     results = syn.tableQuery(f"select * from {tables[table_name]}")
     delete_out = syn.delete(results)
@@ -688,12 +687,7 @@ def main():
     logs = logs.merge(members, how="left", on="submitter_id")
     logs[["first_name","last_name"]] = logs[["first_name","last_name"]].astype(str)
     logs["submitter"] = logs[["first_name","last_name"]].agg(' '.join, axis=1)
-    logs.drop(columns=["submitter_id","first_name","last_name", "user_name"], inplace = True)
-    
-    #truncate IDU column 
-    #ar_merged['IDU'] = ar_merged['IDU'].str[:1000]
-    #logs['IDU'] = logs['IDU'].str[:1000]
-    #logs['rejectedReason'] = logs['rejectedReason'].str[:1000]
+    logs.drop(columns=["submitter_id","first_name","last_name"], inplace = True)
 
     #update tables and wiki
     update_table("Data Request Tracking Table", ar_merged)
