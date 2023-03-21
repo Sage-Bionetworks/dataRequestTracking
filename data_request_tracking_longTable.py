@@ -692,7 +692,6 @@ def main():
     #update tables and wiki
     update_table("Data Request Tracking Table", ar_merged)
     update_table("Data Request changeLogs Table", logs)
-    update_table("1kD Team Members", members)
     generate_idu_wiki(ar_merged)
 
 
