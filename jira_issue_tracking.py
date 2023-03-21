@@ -10,6 +10,7 @@ Contributors: Hannah Calkins, Dan Lu
 import json
 import logging
 import os
+import pdb
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -158,7 +159,9 @@ def pull_active_issues(auth):
    )
 
    # convert json t dict
+   pdb.set_trace()
    results = json.loads(response.text)
+   pdb.set_trace()
    results = results['issues']
    logs = pd.DataFrame()
    for result in results:
@@ -244,6 +247,7 @@ def pull_all_issues(auth):
 
    # convert json t dict
    results = json.loads(response.text)
+   pdb.set_trace()
    results = results['issues']
    requestIds = [result['fields']['customfield_12178'] for result in results]
    return(requestIds)
