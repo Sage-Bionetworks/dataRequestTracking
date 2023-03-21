@@ -689,7 +689,7 @@ def main():
     logs = logs.merge(members, how="left", on="submitter_id")
     logs[["first_name","last_name"]] = logs[["first_name","last_name"]].astype(str)
     logs["submitter"] = logs[["first_name","last_name"]].agg(' '.join, axis=1)
-    logs.drop(columns=["submitter_id","first_name","last_name", "user_name"], inplace = True)
+    logs.drop(columns=["submitter_id","first_name","last_name"], inplace = True)
     
     #update tables and wiki
     update_table("Data Request Tracking Table", ar_merged)
