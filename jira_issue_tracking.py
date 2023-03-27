@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 Name: jira_issue_tracking.py
-Description: script to create jira issue for newly submitted data request 
+Description: script to create jira issue for newly submitted data request
              and generate Jira changeLogs table
 Contributors: Hannah Calkins, Dan Lu
- 
+
 """
 import json
 import logging
@@ -324,7 +324,6 @@ def get_issue_log(issue):
 
 def get_all_issues(auth):
     # Set the query parameters
-    # Send the initial request
     url = "https://sagebionetworks.jira.com/rest/api/3/search"
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     payload = {
