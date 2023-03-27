@@ -19,27 +19,30 @@ syn = synapseclient.Synapse()
 syn.login(silent=True)
 
 # construct schema for the data_request_tracking table 
-cols = [Column(name='SynapseID', columnType='ENTITYID'),
-Column(name='clickWrap_AR', columnType='STRING'),
-Column(name='clickWrap_state', columnType='STRING'),
-Column(name='controlled_AR', columnType='STRING'),
+cols = [Column(name='synapse_id', columnType='ENTITYID'),
+Column(name='clickwrap_ar', columnType='STRING'),
+Column(name='clickwrap_state', columnType='STRING'),
+Column(name='controlled_ar', columnType='STRING'),
 Column(name='controlled_state', columnType='STRING'),
-Column(name='requestId', columnType='STRING'),
+Column(name='request_id', columnType='STRING'),
+Column(name='submission_id', columnType='STRING'),
 #Column(name='submitterID', columnType='STRING'),
-Column(name='firstName', columnType='STRING'),
-Column(name='lastName', columnType='STRING'),
-Column(name='userName', columnType='STRING'),
-Column(name='teamName', columnType='STRING'),
+Column(name='first_name', columnType='STRING'),
+Column(name='last_name', columnType='STRING'),
+Column(name='user_name', columnType='STRING'),
+Column(name='team_name', columnType='STRING'),
 Column(name='institution', columnType='STRING'),
-Column(name='projectLead', columnType='STRING'),
+Column(name='project_lead', columnType='STRING'),
 Column(name= 'IDU', columnType='STRING',maximumSize = 1000),
-Column(name= 'createdOn', columnType='STRING'),
-Column(name= 'modifiedOn', columnType='STRING'),
+Column(name= 'created_on', columnType='STRING'),
+Column(name= 'modified_on', columnType='STRING'),
+Column(name= 'reviewer_id', columnType='STRING'),
 Column(name= 'total_duration', columnType='STRING')
 ]
 
 schema = syn.store(synapseclient.table.Schema(name='Data Request Tracking Table', columns=cols, parent="syn26243167"))
-table = syn.store(Table(schema, df_merged))
+ar_merged = pd.read_csv("")
+table = syn.store(Table(schema, ar_merged))
 
 # construct schema for the data_request_changeLogs table 
 cols = [Column(name='requestId', columnType='STRING'),

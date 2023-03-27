@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 '''
-Name: jira_issue_tracking.py
+Name: jira_issue_tracking_longTable.py
 Description: script to create jira issue for newly submitted data request 
              and generate issue tracking report
 Contributors: Hannah Calkins, Dan Lu
@@ -10,6 +10,7 @@ Contributors: Hannah Calkins, Dan Lu
 import json
 import logging
 import os
+import pdb
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -17,6 +18,7 @@ import pandas as pd
 import pytz
 import requests
 import synapseclient
+from jira import JIRA
 from requests.auth import HTTPBasicAuth
 from synapseclient import Table
 from synapseclient.core.exceptions import (SynapseAuthenticationError,
@@ -60,7 +62,11 @@ class Synapse:
         """Change synapse connection"""
         cls._synapse_client = None
 
-def create_issue(auth, summary : str, duedate : str, requestId : str, description : str):
+def get_folder_name(synapse_id):
+      syn = Synapse().client()
+      return syn.get(synapse_id, downloadFile=False).name
+
+def create_issue(auth, submission):
    ## ticket creation section below 
    ## logic -  from ACT API pull unique value list of resultsId for any request 
    ## for each id returned check if jira ticket with id exists. 
@@ -71,7 +77,11 @@ def create_issue(auth, summary : str, duedate : str, requestId : str, descriptio
       "Accept": "application/json",
       "Content-Type": "application/json"
    }
-
+   # calculate due date
+   duedate = (date.today() + timedelta(days=2)).strftime('%Y-%m-%d')
+   summary = f"1kD Access Request: {submission['folder_name']}/ Requester: {submission['submitter']} ({submission['team_name']})"
+   team = '-'.join(map(str, submission['folder_name'].split("_")[:-1]))
+   description = f"Email subject: 1kD Access Request: {submission['folder_name']} / Reply by: <one week from date email is sent> [Tracking: {submission['submission_id']}] \n\nDear<approver name>: \n\nPlease reply to this email by <one week from date email is sent> with your approval decision. If you cannot approve this request, please provide a valid reason for denial to begin a one-week period for further comment and discussion with the requester. \n --- \n\nNote from ACT: <This can be omitted if no special notes from ACT to reviewer are necessary. This is a place to include ACT comment that could help with PI review.> \n\nWe have received a Data Access Request for access to: \n{submission['folder_name']}({submission['synapse_id']})\n\nDate of Request: {submission['submitted_on']}  \n\nLead PI: {submission['project_lead']} \n\nOrganization: {submission['institution']} \n\nIntended Data Use Statement:\n {submission['IDU']} \nData Accessor: {submission['submitter']}(Synapse user_name: {submission['user_name']})"
    payload=json.dumps({
    "fields": {
       "project":
@@ -81,7 +91,7 @@ def create_issue(auth, summary : str, duedate : str, requestId : str, descriptio
       "summary": summary,
       "duedate": duedate, 
       "components" : [{"name": "Data Access Request Process"}],
-      "customfield_12178":requestId,
+      "customfield_12178":submission['submission_id'],
       "description": {
          "type": "doc",
          "version": 1,
@@ -123,7 +133,7 @@ def reformat_datetime(date_time : str):
   date_time = date_time.replace(microsecond = 0, tzinfo = None)
   return (date_time)  
 
-def pull_active_issues(auth):
+""" def pull_active_issues(auth):
    url = "https://sagebionetworks.jira.com/rest/api/3/search"
    headers = {
       "Accept": "application/json",
@@ -135,8 +145,8 @@ def pull_active_issues(auth):
       "names",
       "changelog"
    ],
-   "jql": "project = ONEKD AND component = 'Data Access Request Process' AND status not in ('Approved', 'Final Denial', 'Closed', 'Cancelled')",
-   "maxResults": 250,
+   "jql": "project = ONEKD AND component = 'Data Access Request Process' AND status not in ('PI Approved','ACT Rejection','PI Rejection','Cancelled','Closed')",
+   "maxResults": 1000,
    "fields": [
       "key", #issue number
       "assignee",
@@ -177,76 +187,145 @@ def pull_active_issues(auth):
             # calculate time_in_status for last status
             log.iloc[-1, log.columns.get_loc('time_in_status')] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log.iloc[-1, log.columns.get_loc('created')]
             # add other variables
-            log['requestId'] = result['fields']['customfield_12178']
+            log['submission_id'] = result['fields']['customfield_12178']
             log['key'] = result['key']
             log['status'] = log['fromString'] + ' - ' + log['toString']
             log.drop(columns = ['fromString', 'toString'], inplace = True)
-            log['number'] = log.index + 1
+            log['status_order'] = log.index + 1
             log.rename(columns = {'created' :'createdOn'}, inplace = True)
             # convert datetime columns to str
             log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
             # get column orders to be used later
             cols = [type + '_' + str(num) for type in ['status', 'createdOn', 'time_in_status'] for num in log.index + 1]
             cols.sort(key=lambda x: x.split('_')[-1])
-            cols = ['requestId', 'key'] + cols
-            log = pd.pivot(log, index=['requestId', 'key'], columns = 'number', values=['status','createdOn', 'time_in_status']).reset_index()
-            # restore column orders
-            log.columns = log.columns.to_flat_index()
-            log.rename(columns=lambda x: x[0] + '_' + str(x[1]) if x[0] in ['status', 'createdOn', 'time_in_status'] else x[0], inplace = True)
-            log = log[cols]
+            cols = ['submission_id', 'key'] + cols
          else:
-            #if anythong other than status changed
-            log = pd.DataFrame({**{'key':result['key'], 'requestId' : result['fields']['customfield_12178'], 'status_1': result['fields']['status']['name'], 'createdOn_1' : result['fields']['created']}},index=[0]).reset_index(drop=True)
-            log['createdOn_1'] = log['createdOn_1'].apply(reformat_datetime)
-            log['time_in_status_1'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn_1']
-            log[['createdOn_1', 'time_in_status_1']] = log[['createdOn_1', 'time_in_status_1']].astype(str)
+            #if anythong other than status changed 
+            log = pd.DataFrame({**{'key':result['key'], 'submission_id' : result['fields']['customfield_12178'], 'status': result['fields']['status']['name'], 'createdOn' : result['fields']['created']}},index=[0]).reset_index(drop=True)
+            log['createdOn'] = log['createdOn'].apply(reformat_datetime)
+            log['time_in_status'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn']
+            log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
+            log['status_order'] = 1
+            
+         logs = pd.concat([logs, log],axis = 0, ignore_index=True)
       else: 
-         log = pd.DataFrame({**{'key':result['key'], 'requestId' : result['fields']['customfield_12178'], 'status_1': result['fields']['status']['name'], 'createdOn_1' : result['fields']['created']}},index=[0]).reset_index(drop=True)
-         log['createdOn_1'] = log['createdOn_1'].apply(reformat_datetime)
-         log['time_in_status_1'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn_1']
-         log[['createdOn_1', 'time_in_status_1']] = log[['createdOn_1', 'time_in_status_1']].astype(str)
-      logs = pd.concat([logs, log],axis = 0, ignore_index=True)
+         log = pd.DataFrame({**{'key':result['key'], 'submission_id' : result['fields']['customfield_12178'], 'status': result['fields']['status']['name'], 'createdOn' : result['fields']['created']}},index=[0]).reset_index(drop=True)
+         log['createdOn'] = log['createdOn'].apply(reformat_datetime)
+         log['time_in_status'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn']
+         log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
+         log['status_order'] = 1
+         logs = pd.concat([logs, log],axis = 0, ignore_index=True)
    return (logs.reset_index(drop = True))
+ """
+def get_issue_log(issue):
+   """Function to pull log information for each issue
 
-def pull_all_issues(auth):
+  Args:
+      issue: a dictionary for the issue
+  """
+   log = issue['changelog']['histories']
+   # if an issue has been processed
+   if log: 
+      log = pd.concat([pd.DataFrame({**x['items'][0], **{'created':x['created']}},index=[0]) for x in log]).reset_index(drop=True)
+
+      # filter out status log 
+      if 'status' in log['field'].unique(): 
+         log = log.loc[log['field'] == 'status', ['fromString', 'toString', 'created']]
+         #reverse order of rows
+         log = log[::-1].reset_index(drop=True)    
+         log['created'] = log['created'].apply(reformat_datetime)
+         log['time_in_status'] = log['created'].diff()
+         log['time_in_status'] = log['time_in_status'].shift(-1)
+         # calculate time_in_status for last status
+         log.iloc[-1, log.columns.get_loc('time_in_status')] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log.iloc[-1, log.columns.get_loc('created')]
+         # add other variables
+         log['submission_id'] = issue['fields']['customfield_12178']
+         log['key'] = issue['key']
+         log['status'] = log['fromString'] + ' - ' + log['toString']
+         log.drop(columns = ['fromString', 'toString'], inplace = True)
+         log['status_order'] = log.index + 1
+         log.rename(columns = {'created' :'createdOn'}, inplace = True)
+         # convert datetime columns to str
+         log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
+         # get column orders to be used later
+         cols = [type + '_' + str(num) for type in ['status', 'createdOn', 'time_in_status'] for num in log.index + 1]
+         cols.sort(key=lambda x: x.split('_')[-1])
+         cols = ['submission_id', 'key'] + cols
+
+      else:
+         #if anythong other than status changed
+         log = pd.DataFrame({**{'key':issue['key'], 'submission_id' : issue['fields']['customfield_12178'], 'status': issue['fields']['status']['name'], 'createdOn' : issue['fields']['created']}},index=[0]).reset_index(drop=True)
+         log['createdOn'] = log['createdOn'].apply(reformat_datetime)
+         log['time_in_status'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn']
+         log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
+         log['status_order'] = 1
+   else: 
+      log = pd.DataFrame({**{'key':issue['key'], 'submission_id' : issue['fields']['customfield_12178'], 'status': issue['fields']['status']['name'], 'createdOn' : issue['fields']['created']}},index=[0]).reset_index(drop=True)
+      log['createdOn'] = log['createdOn'].apply(reformat_datetime)
+      log['time_in_status'] = datetime.now(pytz.timezone('US/Pacific')).replace(microsecond = 0, tzinfo = None) - log['createdOn']
+      log[['createdOn', 'time_in_status']] = log[['createdOn', 'time_in_status']].astype(str)
+      log['status_order'] = 1
+
+   return log
+
+def get_all_issues(auth):
+   # Set the query parameters
+   # Send the initial request
    url = "https://sagebionetworks.jira.com/rest/api/3/search"
    headers = {
       "Accept": "application/json",
       "Content-Type": "application/json"
    }
+   payload = {
+      "expand": [
+         "names",
+         "changelog"
+      ],
+      "jql": "project = ONEKD AND component = 'Data Access Request Process'",
+      "maxResults":100,
+      "fields": [
+         "key", #issue number
+         "assignee",
+         "summary",
+         "status",
+         "customfield_12178",
+         "duedate", #for open status
+         "created"
+      ],
+      "startAt": 0
+   } 
+   json_payload = json.dumps(payload)
+   response = requests.post(url, data=json_payload, headers=headers, auth = auth)
 
-   payload = json.dumps( {
-   "expand": [
-      "names",
-      "changelog"
-   ],
-   "jql": "project = ONEKD AND component = 'Data Access Request Process'",
-   "maxResults": 250,
-   "fields": [
-      "key", #issue number
-      "assignee",
-      "summary",
-      "status",
-      "customfield_12178",
-      "duedate", #for open status
-      "created"
-   ],
-   "startAt": 0
-   } )
+   # Check that the request was successful
+   if response.status_code != 200:
+      raise ValueError('Failed to retrieve issues: {}'.format(response.content))
+   # Get the JSON data from the response
+   results = response.json()
+   logs = pd.DataFrame()
+   # Loop through the issues in the results
+   for issue in results["issues"]:
+      log = get_issue_log(issue)
+      logs = pd.concat([logs, log], axis=0, ignore_index=True)
+   # Check if there are more pages of results
+   while results["total"] > (payload["startAt"] + payload["maxResults"]):
+      # Increment the startAt parameter
+      payload["startAt"] += payload["maxResults"]
+      # Convert the updated payload to a JSON string
+      json_payload = json.dumps(payload)
+      # Send the next request with the updated payload
+      response = requests.post(url, data=json_payload, headers=headers, auth = auth)
+      # Check that the request was successful
+      if response.status_code != 200:
+         raise ValueError('Failed to retrieve issues: {}'.format(response.content))
+      # Get the JSON data from the response
+      results = response.json()
+      # Loop through the issues in the data
+      for issue in results["issues"]:
+         log = get_issue_log(issue)
+         logs = pd.concat([logs, log], axis=0, ignore_index=True)
+   return (logs.reset_index(drop = True))               
 
-   response = requests.request(
-      "POST",
-      url,
-      data=payload,
-      headers=headers,
-      auth=auth
-   )
-
-   # convert json t dict
-   results = json.loads(response.text)
-   results = results['issues']
-   requestIds = [result['fields']['customfield_12178'] for result in results]
-   return(requestIds)
 
 def main():
    syn = Synapse().client()
@@ -256,29 +335,31 @@ def main():
    else:
       auth = HTTPBasicAuth(os.environ.get("JIRA_EMAIL"), os.environ.get("JIRA_API_TOKEN"))
    # pull data request info from data request tracking table
-   query = "SELECT * from syn33240664"
-   request_tracking = syn.tableQuery(query).asDataFrame().reset_index(drop = True)
-   # get the requestId and requestor info
-   request_tracking=request_tracking[request_tracking.controlled_state.notnull()]
-   request_tracking= request_tracking.astype(str)
-   request_tracking = request_tracking.loc[request_tracking['controlled_state'] != "APPROVED",][['SynapseID', 'controlled_AR','requestId', 'firstName', 'lastName', 'teamName']]
-   request_tracking = request_tracking.reset_index(drop = True)
-   # reformat the table 
-   request_tracking = request_tracking.groupby(['requestId', 'controlled_AR','firstName', 'lastName', 'teamName']).apply(lambda x: ', '.join(list(x['SynapseID'].unique()))).reset_index()
-   request_tracking.rename(columns = {0:'SynapseID'}, inplace = True)
-   logs = pull_active_issues(auth)
-   tracked_requestId = pull_all_issues(auth)
+   query = "SELECT * from syn51086699"
+   requests = syn.tableQuery(query).asDataFrame().reset_index(drop = True)
+   # get the submission_id and requestor info
+   requests= requests.astype(str)
+   requests = requests.loc[requests["controlled_state"] != "CANCELLED",][["synapse_id", "request_id","submission_id","submitter", "user_name","team_name", "submitted_on","institution","project_lead","IDU"]]
+   # add folder_name 
+   requests["folder_name"] = requests["synapse_id"].apply(lambda x: get_folder_name(x))
+   #logs = pull_all_issues(auth)
+   logs = get_all_issues(auth)
+   #temp1 = [x for x in requests['submission_id'].unique() if x not in logs['submission_id'].unique()]
+   #temp2 = [x for x in logs['submission_id'].unique() if x not in requests['submission_id'].unique()]
+   #pdb.set_trace()
    # generate new issue
-   summary = 'New data request to 1kD'
-   duedate = (date.today() + timedelta(days=2)).strftime('%Y-%m-%d')
-   for requestId in request_tracking.requestId.unique():
-      if requestId not in tracked_requestId:
-         description = f"{str(request_tracking.loc[request_tracking['requestId'] == requestId, 'firstName'].values[0])} {request_tracking.loc[request_tracking['requestId'] == requestId, 'lastName'].values[0]} from {request_tracking.loc[request_tracking['requestId'] == requestId, 'teamName'].values[0]} team requested access to {request_tracking.loc[request_tracking['requestId'] == requestId, 'SynapseID'].values[0]}. (Controlled_ID: {request_tracking.loc[request_tracking['requestId'] == requestId, 'controlled_AR'].values[0]})"
-         create_issue(auth, summary, duedate, requestId, description)
+   for submission_id in requests['submission_id'].unique():
+      #pdb.set_trace()
+      if submission_id not in np.append(logs['submission_id'].unique(), ['5103','5104','6163','5138','5165','6357','5984','6356']):
+         # pull submission info
+         submission = requests.loc[requests['submission_id'] == submission_id, ].to_dict('records')[0]
+         print('Creating a new Jira issue')
+         create_issue(auth, submission)
    # update changeLogs table
-   results = syn.tableQuery("select * from syn33344572")
+   #pdb.set_trace()
+   results = syn.tableQuery("select * from syn35358355")
    delete_out = syn.delete(results)
-   table_out = syn.store(Table("syn33344572", logs))
+   table_out = syn.store(Table("syn35358355", logs))
 
 if __name__ == "__main__":
     main()
