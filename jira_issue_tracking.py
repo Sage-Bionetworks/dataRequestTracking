@@ -72,6 +72,11 @@ class Synapse:
 
 
 def get_folder_name(synapse_id):
+    """Function to get folder name for a synapse_id
+
+    Args:
+        synapse_id
+    """
     syn = Synapse().client()
     return syn.get(synapse_id, downloadFile=False).name
 
