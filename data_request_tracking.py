@@ -157,11 +157,9 @@ def get_team_member() -> pd.DataFrame:
         members["submitter_id"].isin(act["submitter_id"].values), "team_name"
     ] = "ACT"
     # collapse team_name for members that are in multiple teams
-    members = (
-        members.groupby(["submitter_id","first_name", "last_name", "user_name"])["team_name"]
-        .agg(lambda x: ",".join(tuple(x.unique())))
-        .reset_index()
-    )
+    members.groupby(["submitter_id", "first_name", "last_name", "user_name"])[
+        "team_name"
+    ].apply(lambda x: ",".join(x)).reset_index()
     members.drop_duplicates(inplace=True)
     return members.reset_index(drop=True)
 
