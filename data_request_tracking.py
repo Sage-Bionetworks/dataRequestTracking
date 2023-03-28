@@ -158,7 +158,7 @@ def get_team_member() -> pd.DataFrame:
     ] = "ACT"
     # collapse team_name for members that are in multiple teams
     members = (
-        members.groupby("submitter_id")["team_name"]
+        members.groupby(["submitter_id","first_name", "last_name", "user_name"])["team_name"]
         .agg(lambda x: ",".join(tuple(x.unique())))
         .reset_index()
     )
