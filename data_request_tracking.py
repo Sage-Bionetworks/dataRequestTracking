@@ -1,6 +1,6 @@
 """
 Name: data_request_tracking.py
-Description: a script to generate data_request_tracking table, data request change logs table, 
+Description: a script to generate data_request_tracking table, data request change logs table,
              data structure tree and IDU wiki page for 1kD project
 Contributors: Dan Lu
 """
@@ -139,7 +139,8 @@ def get_team_member() -> pd.DataFrame:
         "3436509",  # 1kD_MicrobiomeBrainDevelopment
         "3436717",  # 1kD_M4EFaD_LABS
         "3436716",  # 1kD_Assembloids
-        "3436713",  # 1kD_DyadicSociometrics
+        "3436713",  # 1kD_DyadicSociometrics_NTU
+        "3466183",  # 1kD_DyadicSociometrics_Cambridge
         "3436714",  # 1kD_First1000Daysdatabase
         "3458847",  # 1kD_M4EFaD_BMT team
         "3464137",  # 1kD_Stanford_Yeung team
@@ -732,9 +733,7 @@ def generate_idu_wiki(df: pd.DataFrame):
     """
     syn = Synapse().client()
     # filter out APPROVED data requests
-    df = df.loc[
-        df["controlled_state"] == "APPROVED",
-    ]
+    df = df.loc[df["controlled_state"] == "APPROVED",]
 
     # append folder names
     df["folder_name"] = df.apply(
@@ -751,9 +750,7 @@ def generate_idu_wiki(df: pd.DataFrame):
     # build the wiki md
     wiki.markdown = ""
     for team in df.team_folder.unique():
-        temp_df = df.loc[
-            df["team_folder"] == team,
-        ]
+        temp_df = df.loc[df["team_folder"] == team,]
         wiki.markdown += f"### {team} Access Requests "
         for x in temp_df.index:
             wiki.markdown += (
