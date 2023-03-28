@@ -19,7 +19,6 @@ import pandas as pd
 import pytz
 import requests
 import synapseclient
-from jira import JIRA
 from requests.auth import HTTPBasicAuth
 from synapseclient import Table
 from synapseclient.core.exceptions import (
