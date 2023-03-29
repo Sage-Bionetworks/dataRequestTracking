@@ -819,7 +819,7 @@ def main():
             [clickwrap_requests, clickwrap_request], axis=0, ignore_index=True
         )
     # regenerate accessRequirementId column since some folders can have multiple clickwrap_ar
-    clickwrap_requests = clickwrap_requests.groupby(["synapse_id", "submitter_id"])["clickwrap_ar"].apply(
+    clickwrap_requests = clickwrap_requests.groupby(["synapse_id", "submitter_id", "clickwrap_state"])["clickwrap_ar"].apply(
         lambda x: ",".join(x)
     ).reset_index()
     # merge the click-wrap and latest controlled data requests
