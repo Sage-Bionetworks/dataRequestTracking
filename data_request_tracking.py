@@ -736,9 +736,10 @@ def generate_idu_wiki(df: pd.DataFrame):
     :param df (pd.DataFrame): the data frame to be saved
     """
     syn = Synapse().client()
-    # filter out APPROVED data requests
+    # filter out APPROVED data requests and AR of Leap test project
     df = df.loc[df["controlled_state"] == "APPROVED",]
-
+    df = df.loc[df["controlled_ar"] != '9606042',]
+    
     # append folder names
     df["folder_name"] = df.apply(
         lambda x: syn.get(x["synapse_id"], downloadFile=False)["name"], axis=1
