@@ -738,7 +738,7 @@ def generate_idu_wiki(df: pd.DataFrame):
     syn = Synapse().client()
     # filter out APPROVED data requests and AR of Leap test project
     df = df.loc[df["controlled_state"] == "APPROVED",]
-    df = df.loc[df["controlled_ar"] != '9606042',]
+    #df = df.loc[df["controlled_ar"] != '9606042',]
     
     # append folder names
     df["folder_name"] = df.apply(
