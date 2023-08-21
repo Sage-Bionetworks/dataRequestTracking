@@ -10,8 +10,6 @@ Contributors: Hannah Calkins, Dan Lu
 import json
 import logging
 import os
-
-# import pdb
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -19,6 +17,7 @@ import pandas as pd
 import pytz
 import requests
 import synapseclient
+from dateutil import parser
 from requests.auth import HTTPBasicAuth
 from synapseclient import Table
 from synapseclient.core.exceptions import (
@@ -224,15 +223,11 @@ def get_issue_log(issue):
         issue: a dictionary for the issue
     """
     log = issue["changelog"]["histories"]
-    # if an issue has been processed
     if log:
-        log = pd.concat(
-            [
-                pd.DataFrame({**x["items"][0], **{"created": x["created"]}}, index=[0])
-                for x in log
-            ]
+        # if an issue has been processed
+        log = pd.json_normalize(
+            log, record_path=["items"], meta=["created"]
         ).reset_index(drop=True)
-
         # filter out status log
         if "status" in log["field"].unique():
             log = log.loc[
@@ -242,13 +237,14 @@ def get_issue_log(issue):
             log = log[::-1].reset_index(drop=True)
             log["created"] = log["created"].apply(reformat_datetime)
             log["time_in_status"] = log["created"].diff()
-            log["time_in_status"] = log["time_in_status"].shift(-1)
-            # calculate time_in_status for last status
-            log.iloc[-1, log.columns.get_loc("time_in_status")] = (
-                datetime.now(pytz.timezone("US/Pacific")).replace(
-                    microsecond=0, tzinfo=None
+            # calculate time_in_status for the first status
+            log.iloc[0, log.columns.get_loc("time_in_status")] = str(
+                abs(
+                    parser.isoparse(issue["fields"]["created"]).replace(
+                        microsecond=0, tzinfo=None
+                    )
+                    - log.iloc[0, log.columns.get_loc("created")]
                 )
-                - log.iloc[-1, log.columns.get_loc("created")]
             )
             # add other variables
             log["submission_id"] = issue["fields"]["customfield_12178"]
@@ -271,7 +267,7 @@ def get_issue_log(issue):
             cols = ["submission_id", "key"] + cols
 
         else:
-            # if anythong other than status changed
+            # if anything other than status changed
             log = pd.DataFrame(
                 {
                     **{
@@ -295,6 +291,7 @@ def get_issue_log(issue):
             ].astype(str)
             log["status_order"] = 1
     else:
+        # if an issue has not been processed
         log = pd.DataFrame(
             {
                 **{
@@ -342,7 +339,6 @@ def get_all_issues(auth):
     }
     json_payload = json.dumps(payload)
     response = requests.post(url, data=json_payload, headers=headers, auth=auth)
-
     # Check that the request was successful
     if response.status_code != 200:
         raise ValueError("Failed to retrieve issues: {}".format(response.content))
@@ -407,10 +403,10 @@ def main():
     logs = get_all_issues(auth)
     # temp1 = [x for x in requests['submission_id'].unique() if x not in logs['submission_id'].unique()]
     # temp2 = [x for x in logs['submission_id'].unique() if x not in requests['submission_id'].unique()]
-    # pdb.set_trace()
+    #
     # generate new issue
     for submission_id in requests["submission_id"].unique():
-        # pdb.set_trace()
+        #
         # exclude some submission_ids because they are either test/cancelled requests or have been tracked in an existing Jira ticket
         if submission_id not in np.append(
             logs["submission_id"].unique(),
@@ -423,7 +419,6 @@ def main():
             print(f"Creating a new Jira issue for submission_id {submission_id}")
             create_issue(auth, submission)
     # update changeLogs table
-    # pdb.set_trace()
     results = syn.tableQuery("select * from syn35358355")
     delete_out = syn.delete(results)
     table_out = syn.store(Table("syn35358355", logs))
