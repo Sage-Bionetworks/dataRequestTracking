@@ -79,7 +79,7 @@ def get_folder_name(synapse_id):
     return syn.get(synapse_id, downloadFile=False).name
 
 
-def create_issue(auth, submission):
+def create_issue(auth, submission, ar_table):
     ## ticket creation section below
     ## logic -  from ACT API pull unique value list of resultsId for any request
     ## for each id returned check if jira ticket with id exists.
@@ -89,9 +89,12 @@ def create_issue(auth, submission):
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     # calculate due date
     duedate = (date.today() + timedelta(days=2)).strftime("%Y-%m-%d")
-    summary = f"1kD Access Request: {submission['folder_name']}/ Requester: {submission['submitter']} ({submission['team_name']})"
+    summary = f"1kD Access Request: {submission['controlled_ar_name']}/ Requester: {submission['submitter']} ({submission['team_name']})"
     team = "-".join(map(str, submission["folder_name"].split("_")[:-1]))
-    description = f"Email subject: 1kD Access Request: {submission['folder_name']} / Reply by: <4 days from date of email> [Tracking: {submission['submission_id']}] \n\nDear<approver name>: \n\nPlease reply to this email by <4 days from date of email> with your approval decision. \n --- \n\nNote from ACT: <This can be omitted if no special notes from ACT to reviewer are necessary. This is a place to include ACT comment that could help with PI review.> \n\nWe have received a Data Access Request for access to: \n{submission['folder_name']}({submission['synapse_id']})\n\nDate of Request: {submission['submitted_on']}  \n\nLead PI: {submission['project_lead']} \n\nOrganization: {submission['institution']} \n\nIntended Data Use Statement: {submission['IDU']} \n\nData Accessor: {submission['submitter']}(Synapse user_name: {submission['user_name']})"
+    synapse_ids = ar_table.loc[
+        ar_table["accessRequirementId"] == submission["accessRequirementId"].values[0],
+    ]["synapse_id"]
+    description = f"Email subject: 1kD Access Request: {submission['controlled_ar_name']} / Reply by: <4 days from date of email> [Tracking: {submission['submission_id']}] \n\nDear<approver name>: \n\nPlease reply to this email by <4 days from date of email> with your approval decision. \n --- \n\nNote from ACT: <This can be omitted if no special notes from ACT to reviewer are necessary. This is a place to include ACT comment that could help with PI review.> \n\nWe have received a Data Access Request for access to: \n{submission['controlled_ar_name']}({synapse_ids})\n\nDate of Request: {submission['submitted_on']}  \n\nProject Lead: {submission['project_lead']} \n\nInstitution: {submission['institution']} \n\nIntended Data Use Statement: {submission['IDU']} \n\nData Requester(s): {submission['submitter']}(Synapse user_name: {submission['user_name']})"
     payload = json.dumps(
         {
             "fields": {
@@ -379,12 +382,14 @@ def main():
             os.environ.get("JIRA_EMAIL"), os.environ.get("JIRA_API_TOKEN")
         )
     # pull data request info from data request tracking table
-    query = "SELECT * from syn51086699"
-    requests = syn.tableQuery(query).asDataFrame().reset_index(drop=True)
+    requests = (
+        syn.tableQuery("SELECT * from syn51086699").asDataFrame().reset_index(drop=True)
+    )
     # get the submission_id and requestor info
     requests = requests.astype(str)
     requests = requests.loc[requests["controlled_state"] != "CANCELLED",][
         [
+            "controlled_ar_name",
             "synapse_id",
             "request_id",
             "submission_id",
@@ -403,7 +408,10 @@ def main():
     logs = get_all_issues(auth)
     # temp1 = [x for x in requests['submission_id'].unique() if x not in logs['submission_id'].unique()]
     # temp2 = [x for x in logs['submission_id'].unique() if x not in requests['submission_id'].unique()]
-    #
+    # get ar list
+    ar_table = (
+        syn.tableQuery("SELECT * from syn52539497").asDataFrame().reset_index(drop=True)
+    )
     # generate new issue
     for submission_id in requests["submission_id"].unique():
         #
@@ -417,7 +425,7 @@ def main():
                 requests["submission_id"] == submission_id,
             ].to_dict("records")[0]
             print(f"Creating a new Jira issue for submission_id {submission_id}")
-            create_issue(auth, submission)
+            create_issue(auth, submission, ar_table)
     # update changeLogs table
     results = syn.tableQuery("select * from syn35358355")
     delete_out = syn.delete(results)

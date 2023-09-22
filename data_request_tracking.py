@@ -157,9 +157,13 @@ def get_team_member() -> pd.DataFrame:
         members["submitter_id"].isin(act["submitter_id"].values), "team_name"
     ] = "ACT"
     # collapse team_name for members that are in multiple teams
-    members = members.groupby(["submitter_id", "first_name", "last_name", "user_name"],dropna=False)[
-        "team_name"
-    ].apply(lambda x: ",".join(x.unique())).reset_index()
+    members = (
+        members.groupby(
+            ["submitter_id", "first_name", "last_name", "user_name"], dropna=False
+        )["team_name"]
+        .apply(lambda x: ",".join(x.unique()))
+        .reset_index()
+    )
     members.drop_duplicates(inplace=True)
     return members.reset_index(drop=True)
 
@@ -335,14 +339,18 @@ def get_ar_folder_id(accessRequirementId: str):
 
     :param accessRequirementId (str): a given controlled access requirement id
 
-    :returns: a data frame containing a folder id and its access requirement id
+    :returns: a data frame containing a folder id and its access requirement id and access requirement name
     """
     syn = Synapse().client()
     ar = syn.restGET(f"/accessRequirement/{accessRequirementId}")
-    ar = pd.DataFrame.from_dict(ar)[["id", "subjectIds"]]
-    ar["synapse_id"] = ar["subjectIds"].apply(lambda col: col["id"])
-    ar.drop(columns="subjectIds", inplace=True)
-    ar.rename(columns={"id": "accessRequirementId"}, inplace=True)
+    ar = pd.DataFrame(
+        {
+            "accessRequirementId": ar["id"],
+            "name": ar["name"],
+            "synapse_id": ",".join([e["id"] for e in ar["subjectIds"]]),
+        },
+        index=[0],
+    )
     ar = ar.astype("string")
     return ar
 
@@ -386,11 +394,12 @@ def group_submissions(submission: list, get_lastest: bool):
         return groups
 
 
-def get_latest_request(submission: list) -> pd.DataFrame:
+def get_latest_request(submission: list, ar_folder: pd.DataFrame) -> pd.DataFrame:
     """
     Function to get the latest data request submitted from a user to a controlled access requirement id
 
     :param submission (list): a list of submissions for a given controlled access requirement id
+    :param ar_folder (dataframe): a data frame contains accessRequirementId, accessRequirement name, synapse_id
 
     :returns: a data frame of the latest data requests to a controlled access requirement id
     """
@@ -442,9 +451,15 @@ def get_latest_request(submission: list) -> pd.DataFrame:
         ]
     ]
     # update subjectId since requestors might submit request from assay folders instead of dataType folders that ar is associated with
-    ar_folder = get_ar_folder_id(df["accessRequirementId"].values[0])
+    ar_folder = ar_folder.loc[
+        ar_folder["accessRequirementId"] == df["accessRequirementId"].values[0],
+    ]
     df["subjectId"] = df["accessRequirementId"].map(
         dict(zip(ar_folder["accessRequirementId"], ar_folder["synapse_id"]))
+    )
+    # add accessRequirementId name
+    df["controlled_ar_name"] = df["accessRequirementId"].map(
+        dict(zip(ar_folder["accessRequirementId"], ar_folder["name"]))
     )
     # rename columns
     df.rename(
@@ -483,11 +498,12 @@ def get_latest_request(submission: list) -> pd.DataFrame:
     return df
 
 
-def data_request_logs(submission: list) -> pd.DataFrame:
+def data_request_logs(submission: list, ar_folder: pd.DataFrame) -> pd.DataFrame:
     """
     Function to generate logs for each data request
 
     :param submission (list): a list of submissions for a given controlled access requirement id
+    :param ar_folder (dataframe): a data frame contains accessRequirementId, accessRequirement name, synapse_id
 
     :returns: a data frame of all data requests to a controlled access requirement id
     """
@@ -629,9 +645,15 @@ def data_request_logs(submission: list) -> pd.DataFrame:
             # add state_order
             submission["state_order"] = idx + 1
             # update subjectId since requestors might submit request from assay folders instead of dataType folders that ar is associated with
-            ar_folder = get_ar_folder_id(submission["accessRequirementId"].values[0])
+            ar_folder = ar_folder.loc[
+                ar_folder["accessRequirementId"]
+                == submission["accessRequirementId"].values[0],
+            ]
             submission["subjectId"] = submission["accessRequirementId"].map(
                 dict(zip(ar_folder["accessRequirementId"], ar_folder["synapse_id"]))
+            )
+            submission["controlled_ar_name"] = submission["accessRequirementId"].map(
+                dict(zip(ar_folder["accessRequirementId"], ar_folder["name"]))
             )
             log = pd.concat([log, submission], axis=0, ignore_index=True)
         logs = pd.concat([logs, log], axis=0, ignore_index=True)
@@ -656,7 +678,7 @@ def data_request_logs(submission: list) -> pd.DataFrame:
     return logs
 
 
-def get_clickwrap_request(accessRequirementId: str):
+def get_clickwrap_request(accessRequirementId: str) -> pd.DataFrame:
     """
     Function to pull data request submitted via clickWrap
 
@@ -676,7 +698,7 @@ def get_clickwrap_request(accessRequirementId: str):
     # generate clickwrap_request table only if AccessApprovalInfo available
     if not ag.empty:
         # retrieve subjectIds for each accessRequirementId
-        cw = get_ar_folder_id(accessRequirementId)
+        cw = ar_folder.loc[ar_folder["accessRequirementId"] == accessRequirementId,]
         # add submitter_id
         ag = ag[["accessRequirementId", "submitterId"]].astype("string")
         cw = cw.merge(ag, how="left", on="accessRequirementId")
@@ -702,6 +724,7 @@ def update_table(table_name: str, df: pd.DataFrame):
     tables = {
         "Data Request Tracking Table": "syn51086692",
         "Data Request changeLogs Table": "syn51086699",
+        "Controlled Access Requirement Table": "syn52539497",
     }
     results = syn.tableQuery(f"select * from {tables[table_name]}")
     delete_out = syn.delete(results)
@@ -738,8 +761,8 @@ def generate_idu_wiki(df: pd.DataFrame):
     syn = Synapse().client()
     # filter out APPROVED data requests and AR of Leap test project
     df = df.loc[df["controlled_state"] == "APPROVED",]
-    df = df.loc[df["controlled_ar"] != '9606042',]
-    
+    df = df.loc[df["controlled_ar"] != "9606042",]
+
     # append folder names
     df["folder_name"] = df.apply(
         lambda x: syn.get(x["synapse_id"], downloadFile=False)["name"], axis=1
@@ -801,15 +824,25 @@ def main():
     # drop duplicates
     clickwrap_ars = set(chain.from_iterable(results["clickwrap_ar"]))
     controlled_ars = set(chain.from_iterable(results["controlled_ar"]))
+    # generate controlled ar table
+    ar_table = pd.concat(
+        [get_ar_folder_id(ar) for ar in controlled_ars], ignore_index=True
+    )
+    # convert to long table used in following steps
+    ar_folder = (
+        ar_table.set_index(["accessRequirementId", "name"])
+        .apply(lambda x: x.str.split(",").explode())
+        .reset_index()
+    )
     ## genetate data request log table
     logs = pd.DataFrame()
     latest_requests = pd.DataFrame()
     for controlled_ar in controlled_ars:
         submissions = get_submission(controlled_ar)
         if submissions:
-            log = data_request_logs(submissions)
+            log = data_request_logs(submissions, ar_folder)
             logs = pd.concat([logs, log], axis=0, ignore_index=True)
-            latest_request = get_latest_request(submissions)
+            latest_request = get_latest_request(submissions, ar_folder)
             latest_requests = pd.concat(
                 [latest_requests, latest_request], axis=0, ignore_index=True
             )
@@ -820,9 +853,13 @@ def main():
             [clickwrap_requests, clickwrap_request], axis=0, ignore_index=True
         )
     # regenerate accessRequirementId column since some folders can have multiple clickwrap_ar
-    clickwrap_requests = clickwrap_requests.groupby(["synapse_id", "submitter_id", "clickwrap_state"])["clickwrap_ar"].apply(
-        lambda x: ",".join(x)
-    ).reset_index()
+    clickwrap_requests = (
+        clickwrap_requests.groupby(["synapse_id", "submitter_id", "clickwrap_state"])[
+            "clickwrap_ar"
+        ]
+        .apply(lambda x: ",".join(x))
+        .reset_index()
+    )
     # merge the click-wrap and latest controlled data requests
     ar_merged = pd.merge(
         latest_requests,
@@ -843,6 +880,10 @@ def main():
     # update tables and wiki
     update_table("Data Request Tracking Table", ar_merged)
     update_table("Data Request changeLogs Table", logs)
+    update_table(
+        "Controlled Access Requirement Table",
+        ar_table.rename(columns={"name": "accessRequirementName"}, inplace=True),
+    )
     generate_idu_wiki(ar_merged)
 
 
