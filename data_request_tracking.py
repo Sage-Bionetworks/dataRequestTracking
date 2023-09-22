@@ -848,7 +848,7 @@ def main():
             )
     clickwrap_requests = pd.DataFrame()
     for clickwrap_ar in clickwrap_ars:
-        clickwrap_request = get_clickwrap_request(clickwrap_ar, ar_folder)
+        clickwrap_request = get_clickwrap_request(clickwrap_ar)
         clickwrap_requests = pd.concat(
             [clickwrap_requests, clickwrap_request], axis=0, ignore_index=True
         )
