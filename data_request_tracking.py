@@ -678,14 +678,11 @@ def data_request_logs(submission: list, ar_folder: pd.DataFrame) -> pd.DataFrame
     return logs
 
 
-def get_clickwrap_request(
-    accessRequirementId: str, ar_folder: pd.DataFrame
-) -> pd.DataFrame:
+def get_clickwrap_request(accessRequirementId: str) -> pd.DataFrame:
     """
     Function to pull data request submitted via clickWrap
 
     :param accessRequirementId (str): a clickWrap access requirement id
-    :param ar_folder (dataframe): a data frame contains accessRequirementId, accessRequirement name, synapse_id
 
     :returns: a data frame of all data requests to a clickWrap access requirement id, including submitter_id, synapse_id, clickwrap_ar
     """
@@ -702,8 +699,6 @@ def get_clickwrap_request(
     if not ag.empty:
         # retrieve subjectIds for each accessRequirementId
         cw = ar_folder.loc[ar_folder["accessRequirementId"] == accessRequirementId,]
-        # remove accessRequirement name
-        cw.drop(columns=["name"], inplace=True)
         # add submitter_id
         ag = ag[["accessRequirementId", "submitterId"]].astype("string")
         cw = cw.merge(ag, how="left", on="accessRequirementId")
