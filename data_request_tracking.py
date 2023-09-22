@@ -332,7 +332,7 @@ def get_submission(accessRequirementId: str):
     return submissions
 
 
-def get_ar_table_id(accessRequirementId: str):
+def get_ar_folder_id(accessRequirementId: str):
     """
     Function to get the synapse id of a folder that has an access requirements
     (used to update synapse_id for data requests submitted from assay folders)
@@ -698,7 +698,7 @@ def get_clickwrap_request(accessRequirementId: str) -> pd.DataFrame:
     # generate clickwrap_request table only if AccessApprovalInfo available
     if not ag.empty:
         # retrieve subjectIds for each accessRequirementId
-        cw = get_ar_table_id(accessRequirementId)
+        cw = get_ar_folder_id(accessRequirementId)
         cw.drop(columns="name", inplace=True)
         # add submitter_id
         ag = ag[["accessRequirementId", "submitterId"]].astype("string")
@@ -827,7 +827,7 @@ def main():
     controlled_ars = set(chain.from_iterable(results["controlled_ar"]))
     # generate controlled ar table
     ar_table = pd.concat(
-        [get_ar_table_id(ar) for ar in controlled_ars], ignore_index=True
+        [get_ar_folder_id(ar) for ar in controlled_ars], ignore_index=True
     )
     ## genetate data request log table
     logs = pd.DataFrame()
