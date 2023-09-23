@@ -858,6 +858,15 @@ def main():
     # merge the click-wrap and latest controlled data request
     # convert latest_requets to long to merge with the clickWrap
     latest_requests = latest_requests.explode("synapse_id").reset_index(drop=True)
+    ## temp files
+    syn = Synapse().client()
+    cw_file = File("clickwrap.csv", parent="syn26243167")
+    syn.store(cw_file)
+    latest_requests_file = File("latest_requests_file.csv", parent="syn26243167")
+    syn.store(latest_requests_file)
+    ar_table_file = File("ar_table_file.csv", parent="syn26243167")
+    syn.store(ar_table_file)
+
     ar_merged = pd.merge(
         latest_requests,
         clickwrap_requests,
