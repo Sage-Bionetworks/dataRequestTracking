@@ -857,13 +857,7 @@ def main():
     )
     # merge the click-wrap and latest controlled data request
     # convert latest_requets to long to merge with the clickWrap
-    latest_requests_index = latest_requests.columns.to_list()
-    latest_requests_index.remove("synapse_id")
-    latest_requests = (
-        latest_requests.set_index(latest_requests_index)
-        .apply(lambda x: x.str.split(",").explode())
-        .reset_index()
-    )
+    latest_requests = latest_requests.explode("synapse_id").reset_index(drop=True)
     ar_merged = pd.merge(
         latest_requests,
         clickwrap_requests,
