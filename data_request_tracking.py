@@ -823,16 +823,15 @@ def main():
     update_folder_tree(out_dir)
     shutil.rmtree(out_dir)
     # drop duplicates
+    syn = Synapse().client()
+    with open("controlled_ar.txt", "w") as f:
+        f.write(json.dumps(results))
     clickwrap_ars = set(chain.from_iterable(results["clickwrap_ar"]))
     controlled_ars = set(chain.from_iterable(results["controlled_ar"]))
     # generate controlled ar table
-    syn = Synapse().client()
-    with open("controlled_ar.txt", "w") as f:
-        f.writelines(controlled_ars)
-
     table_out = syn.store(File("controlled_ar.txt", parent="syn52554468"))
     os.remove("controlled_ar.txt")
-
+    controlled_ars = set(chain.from_iterable(["9605945", "9605946"]))
     ar_table = pd.concat(
         [get_ar_folder_id(ar) for ar in controlled_ars], ignore_index=True
     )
@@ -870,9 +869,20 @@ def main():
     # convert latest_requets to long to merge with the clickWrap
     latest_requests = latest_requests.explode("synapse_id").reset_index(drop=True)
     ## temp table
-    latest_requests_test = latest_requests[["synapse_id","controlled_ar", "controlled_ar_name","controlled_state","request_id","submission_id"]]
+    latest_requests_test = latest_requests[
+        [
+            "synapse_id",
+            "controlled_ar",
+            "controlled_ar_name",
+            "controlled_state",
+            "request_id",
+            "submission_id",
+        ]
+    ]
     table_out = syn.store(Table("syn52554470", latest_requests_test))
-    clickwrap_requests_test = clickwrap_requests[["synapse_id", "submitter_id", "clickwrap_state","clickwrap_ar"]]
+    clickwrap_requests_test = clickwrap_requests[
+        ["synapse_id", "submitter_id", "clickwrap_state", "clickwrap_ar"]
+    ]
     table_out = syn.store(Table("syn52554471", clickwrap_requests_test))
     ar_merged = pd.merge(
         latest_requests,
