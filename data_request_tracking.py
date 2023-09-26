@@ -826,11 +826,17 @@ def main():
     clickwrap_ars = set(chain.from_iterable(results["clickwrap_ar"]))
     controlled_ars = set(chain.from_iterable(results["controlled_ar"]))
     # generate controlled ar table
+    syn = Synapse().client()
+    with open("controlled_ar.txt", "w") as f:
+        f.writelines(controlled_ars)
+
+    table_out = syn.store(File("controlled_ar.txt", parent="syn52554468"))
+    os.remove("controlled_ar.txt")
 
     ar_table = pd.concat(
         [get_ar_folder_id(ar) for ar in controlled_ars], ignore_index=True
     )
-    syn = Synapse().client()
+
     ar_table.to_csv("ar_table.csv")
     table_out = syn.store(File("ar_table.csv", parent="syn52554468"))
     os.remove("ar_table.csv")
