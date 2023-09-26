@@ -834,7 +834,6 @@ def main():
     ar_table.to_csv("ar_table.csv")
     table_out = syn.store(File("ar_table.csv", parent="syn52554468"))
     os.remove("ar_table.csv")
-
     ## genetate data request log table
     logs = pd.DataFrame()
     latest_requests = pd.DataFrame()
@@ -864,15 +863,11 @@ def main():
     # merge the click-wrap and latest controlled data request
     # convert latest_requets to long to merge with the clickWrap
     latest_requests = latest_requests.explode("synapse_id").reset_index(drop=True)
-    ## temp files
-    syn = Synapse().client()
-    cw_file = File("clickwrap.csv", parent="syn26243167")
-    syn.store(cw_file)
-    latest_requests_file = File("latest_requests_file.csv", parent="syn26243167")
-    syn.store(latest_requests_file)
-    ar_table_file = File("ar_table_file.csv", parent="syn26243167")
-    syn.store(ar_table_file)
-
+    ## temp table
+    latest_requests_test = latest_requests[["synapse_id","controlled_ar", "controlled_ar_name","controlled_state","request_id","submission_id"]]
+    table_out = syn.store(Table("syn52554470", latest_requests_test))
+    clickwrap_requests_test = clickwrap_requests[["synapse_id", "submitter_id", "clickwrap_state","clickwrap_ar"]]
+    table_out = syn.store(Table("syn52554471", clickwrap_requests_test))
     ar_merged = pd.merge(
         latest_requests,
         clickwrap_requests,
@@ -900,10 +895,6 @@ def main():
     # update tables and wiki
     update_table("Data Request Tracking Table", ar_merged)
     update_table("Data Request changeLogs Table", logs)
-    update_table(
-        "Controlled Access Requirement Table",
-        ar_table.rename(columns={"name": "accessRequirementName"}, inplace=True),
-    )
     generate_idu_wiki(ar_merged)
 
 
