@@ -10,6 +10,8 @@ Contributors: Hannah Calkins, Dan Lu
 import json
 import logging
 import os
+
+# import pdb
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -90,11 +92,10 @@ def create_issue(auth, submission, ar_table):
     # calculate due date
     duedate = (date.today() + timedelta(days=2)).strftime("%Y-%m-%d")
     summary = f"1kD Access Request: {submission['controlled_ar_name']}/ Requester: {submission['submitter']} ({submission['team_name']})"
-    team = "-".join(map(str, submission["folder_name"].split("_")[:-1]))
     synapse_ids = ar_table.loc[
-        ar_table["accessRequirementId"] == submission["accessRequirementId"].values[0],
-    ]["synapse_id"]
-    description = f"Email subject: 1kD Access Request: {submission['controlled_ar_name']} / Reply by: <4 days from date of email> [Tracking: {submission['submission_id']}] \n\nDear<approver name>: \n\nPlease reply to this email by <4 days from date of email> with your approval decision. \n --- \n\nNote from ACT: <This can be omitted if no special notes from ACT to reviewer are necessary. This is a place to include ACT comment that could help with PI review.> \n\nWe have received a Data Access Request for access to: \n{submission['controlled_ar_name']}({synapse_ids})\n\nDate of Request: {submission['submitted_on']}  \n\nProject Lead: {submission['project_lead']} \n\nInstitution: {submission['institution']} \n\nIntended Data Use Statement: {submission['IDU']} \n\nData Requester(s): {submission['submitter']}(Synapse user_name: {submission['user_name']})"
+        ar_table["accessRequirementId"] == submission["controlled_ar"],
+    ]["synapse_id"].values[0]
+    description = f"Email subject: 1kD Access Request: {submission['controlled_ar_name']} / Reply by: <4 days from date of email> [Tracking: {submission['submission_id']}] \n\nDear<approver name>: \n\nPlease reply to this email by <4 days from date of email> with your approval decision. \n --- \n\nNote from ACT: <This can be omitted if no special notes from ACT to reviewer are necessary. This is a place to include ACT comment that could help with PI review.> \n\nWe have received a Data Access Request for access to: \n{submission['controlled_ar_name']} ({synapse_ids})\n\nDate of Request: {submission['submitted_on']}  \n\nProject Lead: {submission['project_lead']} \n\nInstitution: {submission['institution']} \n\nIntended Data Use Statement: {submission['IDU']} \n\nData Requester(s): {submission['submitter']} (Synapse user_name: {submission['user_name']})"
     payload = json.dumps(
         {
             "fields": {
@@ -389,6 +390,7 @@ def main():
     requests = requests.astype(str)
     requests = requests.loc[requests["controlled_state"] != "CANCELLED",][
         [
+            "controlled_ar",
             "controlled_ar_name",
             "synapse_id",
             "request_id",
@@ -403,7 +405,7 @@ def main():
         ]
     ]
     # add folder_name
-    requests["folder_name"] = requests["synapse_id"].apply(lambda x: get_folder_name(x))
+    # requests["folder_name"] = requests["synapse_id"].apply(lambda x: get_folder_name(x))
     # logs = pull_all_issues(auth)
     logs = get_all_issues(auth)
     # temp1 = [x for x in requests['submission_id'].unique() if x not in logs['submission_id'].unique()]
