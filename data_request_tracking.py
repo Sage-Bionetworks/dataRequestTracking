@@ -5,20 +5,22 @@ Description: a script to generate data_request_tracking table, data request chan
 Contributors: Dan Lu
 """
 
-# import modules
 import json
 import logging
 import os
-
-# import pdb
+import pdb
 import re
 import shutil
 import subprocess
 import tempfile
 import typing
+
+# import modules
+from ast import Dict
 from datetime import datetime
 from functools import partial
 from itertools import chain
+from xmlrpc.client import Boolean
 
 import numpy as np
 import pandas as pd
@@ -95,7 +97,7 @@ def get_user_profile(team_id: str, return_profile: bool = True) -> list:
     :param team_id (str): 1kD team id
     :param return_profile (bool, optional): whether to return user profile. Defaults to True.
 
-    :returns:  list: submitter_id, first_name, last_name, user_name, team_name or only user_id(s)
+    :returns:  list: submitter_id, submitter, user_name, team_name or only user_id(s)
     """
     syn = Synapse().client()
     members = list(syn.getTeamMembers(syn.getTeam(team_id)))
@@ -110,15 +112,19 @@ def get_user_profile(team_id: str, return_profile: bool = True) -> list:
             ]
         )
         user_profile["team_name"] = syn.getTeam(team_id)["name"]
-        user_profile.drop(columns=["isIndividual", "team_id"], inplace=True)
-        return user_profile.rename(
-            columns={
-                "ownerId": "submitter_id",
-                "firstName": "first_name",
-                "lastName": "last_name",
-                "userName": "user_name",
-            }
+        user_profile[["firstName", "lastName"]] = user_profile[
+            ["firstName", "lastName"]
+        ].astype(str)
+        user_profile["submitter"] = user_profile[["firstName", "lastName"]].agg(
+            " ".join, axis=1
         )
+        user_profile.drop(
+            columns=["isIndividual", "team_id", "firstName", "lastName"], inplace=True
+        )
+        user_profile.rename(
+            columns={"ownerId": "submitter_id", "userName": "user_name"}, inplace=True
+        )
+        return user_profile
     else:
         user_id = [member["member"]["ownerId"] for member in members]
         return user_id
@@ -128,7 +134,7 @@ def get_team_member() -> pd.DataFrame:
     """
     Function to pull team members and re-categorize team members if they are in ACT or admin team
 
-    :returns:  pd.DataFrame: submitter_id, first_name, last_name, user_name, team_name
+    :returns:  pd.DataFrame: submitter_id, submitter, user_name, team_name
     """
     # get a list of team members
     team_ids = [
@@ -158,9 +164,9 @@ def get_team_member() -> pd.DataFrame:
     ] = "ACT"
     # collapse team_name for members that are in multiple teams
     members = (
-        members.groupby(
-            ["submitter_id", "first_name", "last_name", "user_name"], dropna=False
-        )["team_name"]
+        members.groupby(["submitter_id", "submitter", "user_name"], dropna=False)[
+            "team_name"
+        ]
         .apply(lambda x: ",".join(x.unique()))
         .reset_index()
     )
@@ -385,13 +391,96 @@ def group_submissions(submission: list, get_lastest: bool):
             [i for i in submission if i["requestId"] == a][-1]
             for a in get_request_id(submission)
         ]
-        return groups
     else:
-        groups = {
-            a: [i for i in submission if i["requestId"] == a]
+        groups = [
+            [i for i in submission if i["requestId"] == a]
             for a in get_request_id(submission)
-        }
-        return groups
+        ]
+    return groups
+
+
+def get_request_table(
+    grouped_submission: list, include_rejectedReason: bool
+) -> pd.DataFrame:
+    """
+    Function to reformat the data request submission list as a data frame
+
+    :param grouped_submission (list): a list of grouped submissions for a given controlled access requirement id
+    :param include_rejectedReason (boolean): a list of submissions for a given controlled access requirement id
+
+    :returns: a data frame of the data request submission to a controlled access requirement id
+    """
+    if include_rejectedReason:
+        # used in log table. Use submittedOn to track submission date for each submission
+        df = pd.concat(
+            [
+                pd.DataFrame(
+                    {
+                        **{"synapse_id": x["subjectId"]},
+                        **{"controlled_ar": x["accessRequirementId"]},
+                        **{"request_id": x["requestId"]},
+                        **{"submission_id": x["id"]},
+                        **{"submitter_id": x["submittedBy"]},
+                        **{
+                            "accessor_id": ",".join(
+                                [a["userId"] for a in x["accessorChanges"]]
+                            )
+                        },
+                        **{"institution": x["researchProjectSnapshot"]["institution"]},
+                        **{"project_lead": x["researchProjectSnapshot"]["projectLead"]},
+                        **{
+                            "IDU": x["researchProjectSnapshot"][
+                                "intendedDataUseStatement"
+                            ]
+                        },
+                        **{"controlled_state": x["state"]},
+                        **{
+                            "rejectedReason": x["rejectedReason"]
+                            if x["state"] == "REJECTED"
+                            else ""
+                        },
+                        **{"reviewer_id": x["modifiedBy"]},
+                        **{"submitted_on": x["submittedOn"]},
+                        **{"modified_on": x["modifiedOn"]},
+                    },
+                    index=[0],
+                )
+                for x in grouped_submission
+            ]
+        )
+    else:
+        df = pd.concat(
+            [
+                pd.DataFrame(
+                    {
+                        **{"synapse_id": x["subjectId"]},
+                        **{"controlled_ar": x["accessRequirementId"]},
+                        **{"request_id": x["requestId"]},
+                        **{"submission_id": x["id"]},
+                        **{"submitter_id": x["submittedBy"]},
+                        **{
+                            "accessor_id": ",".join(
+                                [a["userId"] for a in x["accessorChanges"]]
+                            )
+                        },
+                        **{"institution": x["researchProjectSnapshot"]["institution"]},
+                        **{"project_lead": x["researchProjectSnapshot"]["projectLead"]},
+                        **{
+                            "IDU": x["researchProjectSnapshot"][
+                                "intendedDataUseStatement"
+                            ]
+                        },
+                        **{"controlled_state": x["state"]},
+                        **{"reviewer_id": x["modifiedBy"]},
+                        **{"created_on": x["researchProjectSnapshot"]["createdOn"]},
+                        **{"modified_on": x["modifiedOn"]},
+                    },
+                    index=[0],
+                )
+                for x in grouped_submission
+            ]
+        )
+    return df
 
 
 def get_latest_request(submission: list) -> pd.DataFrame:
@@ -399,82 +488,27 @@ def get_latest_request(submission: list) -> pd.DataFrame:
     Function to get the latest data request submitted from a user to a controlled access requirement id
 
     :param submission (list): a list of submissions for a given controlled access requirement id
-    :param ar_table (dataframe): a data frame contains accessRequirementId, accessRequirement name, synapse_id
 
     :returns: a data frame of the latest data requests to a controlled access requirement id
     """
     latest = group_submissions(submission, get_lastest=True)
     # convert list to dataframe
-    df = pd.json_normalize(latest, max_level=1)
-    # drop modifiedOn in researchProjectSnapshot since it's the same as the createdOn of the snapshot
-    df.drop(
-        columns=[
-            "researchProjectSnapshot.id",
-            "researchProjectSnapshot.modifiedOn",
-            "researchProjectSnapshot.modifiedBy",
-        ],
-        inplace=True,
-    )
-    df = pd.concat(
-        [
-            df.filter(regex="^researchProjectSnapshot", axis=1),
-            df[
-                [
-                    "subjectId",
-                    "state",
-                    "requestId",
-                    "id",
-                    "submittedBy",
-                    "modifiedOn",
-                    "modifiedBy",
-                ]
-            ],
-        ],
-        axis=1,
-    )
-    # trim and rename dataframe
-    df = df.rename(columns=lambda x: re.sub("^researchProjectSnapshot.", "", x))
-    df = df[
-        [
-            "subjectId",
-            "accessRequirementId",
-            "requestId",
-            "id",
-            "submittedBy",
-            "institution",
-            "projectLead",
-            "intendedDataUseStatement",
-            "state",
-            "modifiedBy",
-            "createdOn",
-            "modifiedOn",
-        ]
-    ]
-    # rename columns
-    df.rename(
-        columns={
-            "subjectId": "synapse_id",
-            "accessRequirementId": "controlled_ar",
-            "requestId": "request_id",
-            "id": "submission_id",
-            "submittedBy": "submitter_id",
-            "intendedDataUseStatement": "IDU",
-            "projectLead": "project_lead",
-            "state": "controlled_state",
-            "modifiedBy": "reviewer_id",
-            "createdOn": "created_on",
-            "modifiedOn": "modified_on",
-        },
-        inplace=True,
-    )
+    df = get_request_table(grouped_submission=latest, include_rejectedReason=False)
     # convert submittedOn and modifiedOn to datetime data type
-    date_cols = ["created_on", "modified_on"]
-    df[date_cols] = df[date_cols].apply(from_iso_to_datetime)
+    df[["created_on", "modified_on"]] = df[["created_on", "modified_on"]].apply(
+        from_iso_to_datetime
+    )
     df["total_duration"] = df["modified_on"] - df["created_on"]
     # recalculate total duration for submitted entry
-    df.loc[df.controlled_state == "SUBMITTED", "total_duration"] = (
-        datetime.now(pytz.timezone("US/Pacific")).replace(microsecond=0, tzinfo=None)
-        - df["created_on"]
+    df["total_duration"] = np.where(
+        df["controlled_state"] == "SUBMITTED",
+        (
+            datetime.now(pytz.timezone("US/Pacific")).replace(
+                microsecond=0, tzinfo=None
+            )
+            - df["created_on"]
+        ),
+        df["total_duration"],
     )
     # convert date_time columns to string columns
     df[["created_on", "modified_on", "total_duration"]] = df[
@@ -487,6 +521,30 @@ def get_latest_request(submission: list) -> pd.DataFrame:
     return df
 
 
+def calculate_processing_time(row):
+    """
+    Function to calculate processing_time
+    :param row: a dataframe row
+    :returns: row with processing_time column added
+    """
+    if row["controlled_state"] == "SUBMITTED":
+        # calculate processing_time for SUBMITTED request (no modifiedOn date, no reviewer)
+        row["processing_time"] = (
+            datetime.now(pytz.timezone("US/Pacific")).replace(
+                microsecond=0, tzinfo=None
+            )
+            - row["submitted_on"]
+        )
+        row["modified_on"] = ""
+        row["reviewer_id"] = ""
+    else:
+        row["processing_time"] = row["modified_on"] - row["submitted_on"]
+    row[["submitted_on", "modified_on", "processing_time"]] = row[
+        ["submitted_on", "modified_on", "processing_time"]
+    ].astype(str)
+    return row
+
+
 def data_request_logs(submission: list) -> pd.DataFrame:
     """
     Function to generate logs for each data request
@@ -496,161 +554,18 @@ def data_request_logs(submission: list) -> pd.DataFrame:
 
     :returns: a data frame of all data requests to a controlled access requirement id
     """
-    logs = pd.DataFrame()
     grouped_submissions = group_submissions(submission, get_lastest=False)
-    for key, value in grouped_submissions.items():
-        log = pd.DataFrame()
-        for idx in range(len(value)):
-            # loop through submissions
-            submission = pd.json_normalize(value[idx], max_level=1)
-            if submission["state"].values[0] == "REJECTED":
-                # extract reject reason for rejected submission
-                submission = pd.concat(
-                    [
-                        submission.filter(regex="^researchProjectSnapshot", axis=1),
-                        submission[
-                            [
-                                "requestId",
-                                "id",
-                                "subjectId",
-                                "submittedBy",
-                                "submittedOn",
-                                "modifiedOn",
-                                "state",
-                                "rejectedReason",
-                                "modifiedBy",
-                            ]
-                        ],
-                    ],
-                    axis=1,
-                )
-                # trim and rename dataframe
-                submission.drop(
-                    columns=[
-                        "researchProjectSnapshot.id",
-                        "researchProjectSnapshot.modifiedOn",
-                        "researchProjectSnapshot.modifiedBy",
-                    ],
-                    inplace=True,
-                )
-                submission = submission.rename(
-                    columns=lambda x: re.sub("^researchProjectSnapshot.", "", x)
-                )
-                submission = submission[
-                    [
-                        "requestId",
-                        "id",
-                        "subjectId",
-                        "accessRequirementId",
-                        "submittedBy",
-                        "state",
-                        "institution",
-                        "projectLead",
-                        "intendedDataUseStatement",
-                        "rejectedReason",
-                        "modifiedBy",
-                        "submittedOn",
-                        "modifiedOn",
-                    ]
-                ]
-            else:
-                submission = pd.json_normalize(value[idx], max_level=1)
-                submission = pd.concat(
-                    [
-                        submission.filter(regex="^researchProjectSnapshot", axis=1),
-                        submission[
-                            [
-                                "requestId",
-                                "id",
-                                "subjectId",
-                                "submittedBy",
-                                "submittedOn",
-                                "modifiedOn",
-                                "state",
-                                "modifiedBy",
-                            ]
-                        ],
-                    ],
-                    axis=1,
-                )
-                # trim and rename dataframe
-                submission.drop(
-                    columns=[
-                        "researchProjectSnapshot.id",
-                        "researchProjectSnapshot.modifiedOn",
-                        "researchProjectSnapshot.modifiedBy",
-                    ],
-                    inplace=True,
-                )
-                submission = submission.rename(
-                    columns=lambda x: re.sub("^researchProjectSnapshot.", "", x)
-                )
-                submission = submission[
-                    [
-                        "requestId",
-                        "id",
-                        "subjectId",
-                        "accessRequirementId",
-                        "submittedBy",
-                        "state",
-                        "institution",
-                        "projectLead",
-                        "intendedDataUseStatement",
-                        "modifiedBy",
-                        "submittedOn",
-                        "modifiedOn",
-                    ]
-                ]
-            # convert time to pst and calculate processing_time
-            submission[["submittedOn", "modifiedOn"]] = submission[
-                ["submittedOn", "modifiedOn"]
-            ].apply(from_iso_to_datetime)
-            if value[idx]["state"] == "SUBMITTED":
-                # calculate processing_time for SUBMITTED request (no modifiedOn date, no reviewer)
-                submission["processing_time"] = (
-                    datetime.now(pytz.timezone("US/Pacific")).replace(
-                        microsecond=0, tzinfo=None
-                    )
-                    - submission["submittedOn"]
-                )
-                submission[
-                    ["submittedOn", "modifiedOn", "processing_time"]
-                ] = submission[["submittedOn", "modifiedOn", "processing_time"]].astype(
-                    str
-                )
-                submission["modifiedOn"] = ""
-                submission["modifiedBy"] = ""
-            else:
-                # calculate processing_time for other request (no modifiedOn date)
-                submission["processing_time"] = (
-                    submission["modifiedOn"] - submission["submittedOn"]
-                )
-                submission[
-                    ["submittedOn", "modifiedOn", "processing_time"]
-                ] = submission[["submittedOn", "modifiedOn", "processing_time"]].astype(
-                    str
-                )
-
-            # add state_order
-            submission["state_order"] = idx + 1
-            log = pd.concat([log, submission], axis=0, ignore_index=True)
-        logs = pd.concat([logs, log], axis=0, ignore_index=True)
-    logs.rename(
-        columns={
-            "requestId": "request_id",
-            "id": "submission_id",
-            "subjectId": "synapse_id",
-            "accessRequirementId": "controlled_ar",
-            "submittedBy": "submitter_id",
-            "intendedDataUseStatement": "IDU",
-            "modifiedBy": "reviewer_id",
-            "submittedOn": "submitted_on",
-            "modifiedOn": "modified_on",
-            "state": "controlled_state",
-            "projectLead": "project_lead",
-        },
-        inplace=True,
+    logs = get_request_table(
+        grouped_submission=list(chain.from_iterable(grouped_submissions)),
+        include_rejectedReason=True,
     )
+    logs["state_order"] = logs.groupby(["request_id"]).cumcount() + 1
+    # convert time to pst and calculate processing_time
+    logs[["submitted_on", "modified_on"]] = logs[["submitted_on", "modified_on"]].apply(
+        from_iso_to_datetime
+    )
+    # add processing_time column
+    logs = logs.apply(calculate_processing_time, axis=1)
     # get rid of Non-ASCII characters
     logs.IDU.replace({r"[^\x00-\x7F]+": ""}, regex=True, inplace=True)
     return logs
@@ -809,7 +724,7 @@ def generate_idu_wiki(df: pd.DataFrame):
 
 def main():
     Synapse().client()
-    ## crawl through folder structure to get accessRequirementId
+    # crawl through folder structure to get accessRequirementId
     folder_ids = get_data_release_folder("syn26294912")
     # create a temporary directory under the current working directory
     out_dir = tempfile.mkdtemp(dir=os.getcwd())
@@ -820,7 +735,7 @@ def main():
         results["clickwrap_ar"].append(result["clickwrap_ar"])
         results["controlled_ar"].append(result["controlled_ar"])
     # update folder tree and remove temporary directory once done
-    update_folder_tree(out_dir)
+    # update_folder_tree(out_dir)
     shutil.rmtree(out_dir)
     # drop duplicates
     clickwrap_ars = set(chain.from_iterable(results["clickwrap_ar"]))
@@ -830,7 +745,7 @@ def main():
         [get_ar_folder_id(ar) for ar in clickwrap_ars.union(controlled_ars)],
         ignore_index=True,
     )
-    ## genetate data request log table
+    # genetate data request log table
     logs = pd.DataFrame()
     latest_requests = pd.DataFrame()
     for controlled_ar in controlled_ars:
@@ -895,10 +810,6 @@ def main():
         .apply(lambda x: ",".join(x))
         .reset_index()
     )
-    # add user profile
-    members = get_team_member()
-    ar_merged = ar_merged.merge(members, how="left", on="submitter_id")
-    ar_merged.drop(columns=["submitter_id"], inplace=True)
 
     # update synapse_id for logs
     logs.drop(columns=["synapse_id"], inplace=True)
@@ -907,11 +818,40 @@ def main():
     )
     logs.drop(columns=["accessRequirementId"], inplace=True)
     logs.rename(columns={"accessRequirementName": "controlled_ar_name"}, inplace=True)
-    # add user profile
-    logs = logs.merge(members, how="left", on="submitter_id")
-    logs[["first_name", "last_name"]] = logs[["first_name", "last_name"]].astype(str)
-    logs["submitter"] = logs[["first_name", "last_name"]].agg(" ".join, axis=1)
-    logs.drop(columns=["submitter_id", "first_name", "last_name"], inplace=True)
+
+    # load team member table
+    members = get_team_member()
+    members = members.set_index("submitter_id").to_dict("index")
+
+    # add user profile for ar_merged table
+    ar_merged["submitter"] = ar_merged["submitter_id"].apply(
+        lambda x: members.get(x, {}).get("submitter")
+    )
+    ar_merged["team_name"] = ar_merged["submitter_id"].apply(
+        lambda x: members.get(x, {}).get("team_name")
+    )
+    ar_merged["accessor_id"] = ar_merged["accessor_id"].str.split(",")
+    ar_merged["accessor"] = ar_merged["accessor_id"].apply(
+        lambda x: ", ".join([str(members.get(e, {}).get("submitter")) for e in x])
+    )
+    ar_merged.drop(columns=["submitter_id", "accessor_id"], inplace=True)
+
+    # add user profile for logs table
+    logs["submitter"] = logs["submitter_id"].apply(
+        lambda x: members.get(x, {}).get("submitter")
+    )
+    logs["team_name"] = logs["submitter_id"].apply(
+        lambda x: members.get(x, {}).get("team_name")
+    )
+    logs["accessor_id"] = logs["accessor_id"].str.split(",")
+    logs["accessor"] = logs["accessor_id"].apply(
+        lambda x: ", ".join([str(members.get(e, {}).get("submitter")) for e in x])
+    )
+    logs["accessor_username"] = logs["accessor_id"].apply(
+        lambda x: ", ".join([str(members.get(e, {}).get("user_name")) for e in x])
+    )
+    logs.drop(columns=["submitter_id", "accessor_id"], inplace=True)
+    # pdb.set_trace()
 
     # update tables and wiki
     update_table("Data Request Tracking Table", ar_merged)

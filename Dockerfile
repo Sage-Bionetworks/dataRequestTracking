@@ -11,9 +11,8 @@ RUN pip3 install \
     pytz \
     requests \
     synapseclient \
-    pandas==1.4.4 \
+    pandas\
     pysftp
 
 WORKDIR dataRequestTracking
 COPY . .
-
