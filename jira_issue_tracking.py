@@ -91,11 +91,11 @@ def create_issue(auth, submission, ar_table):
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     # calculate due date
     duedate = (date.today() + timedelta(days=2)).strftime("%Y-%m-%d")
-    summary = f"1kD Access Request: {submission['controlled_ar_name']}/ Requester: {submission['submitter']} ({submission['team_name']})"
+    summary = f"1kD Access Request: {submission['controlled_ar_name']}/ Requester: {submission['accessor']} ({submission['team_name']})"
     synapse_ids = ar_table.loc[
         ar_table["accessRequirementId"] == submission["controlled_ar"],
     ]["synapse_id"].values[0]
-    description = f"Email subject: 1kD Access Request: {submission['controlled_ar_name']} / Reply by: <4 days from date of email> [Tracking: {submission['submission_id']}] \n\nDear<approver name>: \n\nPlease reply to this email by <4 days from date of email> with your approval decision. \n --- \n\nNote from ACT: <This can be omitted if no special notes from ACT to reviewer are necessary. This is a place to include ACT comment that could help with PI review.> \n\nWe have received a Data Access Request for access to: \n{submission['controlled_ar_name']} ({synapse_ids})\n\nDate of Request: {submission['submitted_on']}  \n\nProject Lead: {submission['project_lead']} \n\nInstitution: {submission['institution']} \n\nIntended Data Use Statement: {submission['IDU']} \n\nData Requester(s): {submission['submitter']} (Synapse user_name: {submission['user_name']})"
+    description = f"Email subject: 1kD Access Request: {submission['controlled_ar_name']} / Reply by: <4 days from date of email> [Tracking: {submission['submission_id']}] \n\nDear<approver name>: \n\nPlease reply to this email by <4 days from date of email> with your approval decision. \n --- \n\nNote from ACT: <This can be omitted if no special notes from ACT to reviewer are necessary. This is a place to include ACT comment that could help with PI review.> \n\nWe have received a Data Access Request for access to: \n{submission['controlled_ar_name']} ({synapse_ids})\n\nDate of Request: {submission['submitted_on']}  \n\nProject Lead: {submission['project_lead']} \n\nInstitution: {submission['institution']} \n\nIntended Data Use Statement: {submission['IDU']} \n\nData Requester(s): {submission['accessor']} (Synapse user_name: {submission['accessor_username']})"
     payload = json.dumps(
         {
             "fields": {
@@ -396,7 +396,8 @@ def main():
             "request_id",
             "submission_id",
             "submitter",
-            "user_name",
+            "accessor",
+            "accessor_username",
             "team_name",
             "submitted_on",
             "institution",
