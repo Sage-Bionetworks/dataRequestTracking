@@ -91,7 +91,7 @@ def create_issue(auth, submission, ar_table):
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     # calculate due date
     duedate = (date.today() + timedelta(days=2)).strftime("%Y-%m-%d")
-    summary = f"1kD Access Request: {submission['controlled_ar_name']}/ Requester: {submission['accessor']} ({submission['team_name']})"
+    summary = f"1kD Access Request: {submission['controlled_ar_name']}/ Requester: {submission['submitter']} ({submission['team_name']})"
     synapse_ids = ar_table.loc[
         ar_table["accessRequirementId"] == submission["controlled_ar"],
     ]["synapse_id"].values[0]
