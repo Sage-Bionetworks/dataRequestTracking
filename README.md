@@ -19,6 +19,7 @@ A. The following credentials need to be created and provided in `Batch Secrets`.
   4. AWS Batch Image Schedule needs to be set to indicate how often the pipeline needs to be run.
   5. AWS Batch Command example: ```sh update_tables.sh```
   6. Required tags needs to be provided for cost tracking.
+  7. Jira Automation is set up to allow automatic notification sent to the Approver once new ticket is generated. 
 
 **Docker**
 
