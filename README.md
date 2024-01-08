@@ -11,12 +11,14 @@ The `jira_issue_tracking.py` (1kD) and `jira_service_desk.py` (Elite) are used t
 
 # Setting Up
 The pipeline is run under ACT team member's account on AWS Batch(Scheduled Jobs) since only ACT has permission to pull data request from Synapse backend. 
-A. The following credentials need to be created and provided in `Batch Secrets`. The format for `Batch Secrets` is "SYNAPSE_AUTH_TOKEN":"Your PAT","JIRA_EMAIL":"Your email in Jira","JIRA_API_TOKEN":"Your Jira API token". 
+A. The following credentials need to be created and provided in `Batch Secrets`. The format for `Batch Secrets` is 
+```"SYNAPSE_AUTH_TOKEN":"Your PAT","JIRA_EMAIL":"Your email in Jira","JIRA_API_TOKEN":"Your Jira API token"```
   1. SYNAPSE_AUTH_TOKEN. The SYNAPSE_AUTH_TOKEN is the Personal Access Token(PAT) that can be used to log in to the Synapse command line, Python or R clients. It can be created [using this instruction](https://help.synapse.org/docs/Managing-Your-Account.2055405596.html#ManagingYourAccount-PersonalAccessTokens). To enable the pipeline to be run successfully, the token needs to have can View, Download and Modify permissions.
   2. JIRA_EMAIL and JIRA_API_TOKEN. The JIRA_EMAIL is the email a user uses in Jira Software Dashboard/Jira Service Desk and the JIRA_API_TOKEN is the token that can be used to authenticate a script to interact with an Atlassian cloud product. The JIRA_API_TOKEN can be created following [this instruction](https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/).
   3. Docker image. A docker image needs to be provided in AWS Batch Image. Currently, the sagebionetworks/1kd-data-request-tracking image is used.
   4. AWS Batch Image Schedule needs to be set to indicate how often the pipeline needs to be run.
-  5. Required tags needs to be provided for cost tracking.
+  5. AWS Batch Command example: ```sh update_tables.sh```
+  6. Required tags needs to be provided for cost tracking.
 
 **Docker**
 
