@@ -282,7 +282,7 @@ def main():
             os.environ.get("JIRA_EMAIL"), os.environ.get("JIRA_API_TOKEN")
         )
     # pull data request info from data request tracking table
-    query = "SELECT * from syn53038887"
+    query = "SELECT * from syn53240459"
     requests = syn.tableQuery(query).asDataFrame().reset_index(drop=True)
     # get the submission_id and requestor info
     requests = requests.astype(str)
@@ -318,9 +318,9 @@ def main():
     # pull most recent logs
     logs = get_all_issues(auth)
     # update changeLogs table
-    results = syn.tableQuery("select * from syn53040329")
+    results = syn.tableQuery("select * from syn53240580")
     delete_out = syn.delete(results)
-    table_out = syn.store(Table("syn53040329", logs))
+    table_out = syn.store(Table("syn53240580", logs))
 
 
 if __name__ == "__main__":
