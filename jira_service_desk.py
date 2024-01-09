@@ -214,7 +214,7 @@ def get_all_issues(auth):
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     payload = {
         "expand": ["names", "changelog"],
-        "jql": "project = 'TESTSD'",
+        "jql": "project = 'ACT'",
         "maxResults": 100,
         "fields": [
             "key",  # issue number
@@ -317,6 +317,8 @@ def main():
             create_issue(auth, request)
     # pull most recent logs
     logs = get_all_issues(auth)
+    # drop rows that have no request_id
+    logs.dropna(subset=["request_id"], inplace = True)
     # update changeLogs table
     results = syn.tableQuery("select * from syn53240580")
     delete_out = syn.delete(results)
