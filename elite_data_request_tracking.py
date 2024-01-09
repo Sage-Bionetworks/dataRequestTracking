@@ -323,7 +323,7 @@ def update_table(table_name: str, df: pd.DataFrame):
     :param df (pd.DataFrame): the data frame to be saved
     """
     syn = Synapse().client()
-    tables = {"Data Request changeLogs Table": "syn53038887"}
+    tables = {"Data Request changeLogs Table": "syn53240459"}
     results = syn.tableQuery(f"select * from {tables[table_name]}")
     delete_out = syn.delete(results)
     table_out = syn.store(Table(tables[table_name], df))
