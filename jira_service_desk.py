@@ -323,6 +323,7 @@ def main():
     results = syn.tableQuery("select * from syn53240580")
     delete_out = syn.delete(results)
     table_out = syn.store(Table("syn53240580", logs))
+    print(f"Done updating Data Request related Jira issue changeLogs Table")
 
 
 if __name__ == "__main__":
