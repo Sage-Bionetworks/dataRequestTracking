@@ -302,7 +302,6 @@ def main():
             "IDU",
         ]
     ]
-    requests = requests.iloc[0:2,]
     # logs = pull_all_issues(auth)
     logs = get_all_issues(auth)
     # generate new issue
